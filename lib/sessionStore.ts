@@ -250,17 +250,33 @@ const SESSION_TTL_SEC = 60 * 60 * 24;
 const stateKey = (id: string) => `lighthaven:session:${id.toUpperCase()}`;
 const channel = (id: string) => `lighthaven:chan:${id.toUpperCase()}`;
 
-function makeRedisBackend(url: string): Backend {
+/** ioredis parses scheme-less URLs as unix socket paths, so a REDIS_URL pasted
+ * as `user:pass@host:port` fails with ENOENT — normalize it. */
+function normalizeRedisUrl(url: string): string {
+  return url.includes("://") ? url : `redis://${url}`;
+}
+
+/** An unhandled ioredis "error" event crashes the serverless function; log it
+ * and let ioredis's built-in retries do their thing instead. */
+function quietErrors<T extends Redis>(conn: T): T {
+  conn.on("error", (err) => console.error("[redis]", err?.message ?? err));
+  return conn;
+}
+
+function makeRedisBackend(rawUrl: string): Backend {
+  const url = normalizeRedisUrl(rawUrl);
   // One shared command/publish connection, reused across invocations on a warm
   // instance (subscriptions get their own connections — a subscribed client
   // can't issue normal commands).
   const g = globalThis as unknown as { __singalongRedis?: Redis };
   const cmd =
     g.__singalongRedis ??
-    (g.__singalongRedis = new Redis(url, {
-      maxRetriesPerRequest: 3,
-      lazyConnect: false,
-    }));
+    (g.__singalongRedis = quietErrors(
+      new Redis(url, {
+        maxRetriesPerRequest: 3,
+        lazyConnect: false,
+      }),
+    ));
 
   const write = async (state: SessionState) => {
     await cmd.set(stateKey(state.id), JSON.stringify(state), "EX", SESSION_TTL_SEC);
@@ -307,7 +323,7 @@ function makeRedisBackend(url: string): Backend {
       return state;
     },
     async subscribe(id, fn) {
-      const sub = new Redis(url, { maxRetriesPerRequest: null });
+      const sub = quietErrors(new Redis(url, { maxRetriesPerRequest: null }));
       const ch = channel(id);
       sub.on("message", (_ch, msg) => {
         try {
