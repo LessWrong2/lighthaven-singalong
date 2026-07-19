@@ -256,7 +256,11 @@ const channel = (id: string) => `lighthaven:chan:${id.toUpperCase()}`;
  * dashboard line-wrap; ioredis silently treats malformed ones as unix socket
  * paths and dies with ENOENT. */
 function normalizeRedisUrl(url: string): string {
-  const clean = url.replace(/\s+/g, "");
+  let clean = url.replace(/\s+/g, "");
+  // A whole `REDIS_URL=...` line pasted as the value, possibly quoted.
+  clean = clean.replace(/^["']+|["']+$/g, "");
+  clean = clean.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, "");
+  clean = clean.replace(/^["']+|["']+$/g, "");
   const m = clean.match(/^(rediss?):\/+(.*)$/i);
   if (m) return `${m[1].toLowerCase()}://${m[2]}`;
   return `redis://${clean.replace(/^\/+/, "")}`;
