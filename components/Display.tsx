@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/useSession";
-import { activeLyricIndex, fmt, mapLyricsToSheet } from "@/lib/format";
+import { activeLyricIndex, chordKeyFor, fmt, mapLyricsToSheet } from "@/lib/format";
 import { APP_NAME, CANONICAL_ID } from "@/lib/config";
 import { useLyrics } from "@/lib/useLyrics";
 
@@ -162,16 +162,16 @@ function DisplayInner({
     };
   }, [livePositionNow]);
 
-  // Fetch the chord sheet when this is the /chords screen and the current
-  // song has one pasted. Keyed on uid + revision so an edited sheet refetches.
-  const currentUid = current?.uid;
-  const currentHasChords = Boolean(current?.hasChords);
-  const sheetKey = currentUid ? `${currentUid}:${current?.chordsRev ?? 0}` : null;
+  // Fetch the chord sheet when this is the /chords screen. Sheets are stored
+  // per song (chordKeyFor), so a re-queued song restores its saved chords.
+  // Cache-keyed on song key + revision so an edited sheet refetches.
+  const chordKey = current ? chordKeyFor(current) : null;
+  const sheetKey = chordKey ? `${chordKey}:${current?.chordsRev ?? 0}` : null;
   useEffect(() => {
-    if (!wantChords || !currentUid || !sheetKey || !currentHasChords) return;
+    if (!wantChords || !chordKey || !sheetKey) return;
     if (chordSheet?.uid === sheetKey && chordSheet.text !== null) return;
     let cancelled = false;
-    fetch(`/api/chords/${currentUid}`)
+    fetch(`/api/chords/${chordKey}`)
       .then(async (r) => (r.ok ? String((await r.json()).text ?? "") : ""))
       .catch(() => "")
       .then((text) => {
@@ -180,15 +180,14 @@ function DisplayInner({
     return () => {
       cancelled = true;
     };
-  }, [wantChords, currentUid, sheetKey, currentHasChords, chordSheet]);
+  }, [wantChords, chordKey, sheetKey, chordSheet]);
 
   // What this screen shows for the current song: the chord sheet when we're
-  // the /chords screen and one exists (fall back to lyrics when it doesn't,
-  // or when the sheet fails to load).
+  // the /chords screen and one exists — plain lyrics otherwise (no sheet,
+  // sheet still loading, or fetch failed).
   const sheetText =
     chordSheet && sheetKey && chordSheet.uid === sheetKey ? chordSheet.text : null;
-  const chordsActive =
-    Boolean(wantChords) && currentHasChords && (sheetText === null || sheetText.length > 0);
+  const chordsActive = Boolean(wantChords) && Boolean(sheetText);
 
   const sheetLines = useMemo(() => (sheetText ? sheetText.split(/\r?\n/) : null), [sheetText]);
   // lyric-line index -> sheet-line index, matched by text, so the sheet can

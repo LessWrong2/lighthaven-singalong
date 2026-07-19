@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/useSession";
 import { useLyrics } from "@/lib/useLyrics";
-import { activeLyricIndex, fmt } from "@/lib/format";
+import { activeLyricIndex, chordKeyFor, fmt } from "@/lib/format";
 import { APP_NAME, CANONICAL_ID } from "@/lib/config";
 import type { LyricsSearchResult, QueueItem, SongMode } from "@/lib/types";
 
@@ -138,11 +138,14 @@ function ChordsEditor({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const chordKey = chordKeyFor(item);
 
   async function toggle() {
     if (!open && draft === null) {
       try {
-        const r = await fetch(`/api/chords/${item.uid}`);
+        const r = await fetch(`/api/chords/${chordKey}`);
         setDraft(r.ok ? String((await r.json()).text ?? "") : "");
       } catch {
         setDraft("");
@@ -154,8 +157,9 @@ function ChordsEditor({
   async function save() {
     if (draft === null || busy) return;
     setBusy(true);
+    setError(null);
     try {
-      const r = await fetch(`/api/chords/${item.uid}`, {
+      const r = await fetch(`/api/chords/${chordKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: draft }),
@@ -170,11 +174,51 @@ function ChordsEditor({
     }
   }
 
+  async function generate() {
+    if (generating) return;
+    setGenerating(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/chords/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: chordKey,
+          title: item.title,
+          artist: item.artist,
+          lrclibId: item.lrclibId ?? undefined,
+        }),
+      });
+      const b = (await r.json()) as {
+        ok: boolean;
+        text?: string;
+        saved?: boolean;
+        error?: string;
+      };
+      if (b.ok && b.text) {
+        setDraft(b.text);
+        setOpen(true);
+        // The server saves immediately when the song had no sheet yet; the
+        // host can still edit and re-save from the textarea.
+        if (b.saved) onSaved(true);
+      } else {
+        setError(b.error ?? "Chord generation failed — try again.");
+      }
+    } catch {
+      setError("Chord generation failed — check the connection and try again.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   return (
     <div style={{ marginTop: "0.5rem" }}>
       <div className="cluster">
         <button className="ghost" onClick={toggle} aria-expanded={open}>
           🎸 Chords{item.hasChords ? " ✓" : ""}
+        </button>
+        <button onClick={generate} disabled={generating} title="Have Claude draft a chord sheet for this song — review it before the band plays from it">
+          {generating ? "✨ Generating… (~30s)" : "✨ Generate"}
         </button>
         <a
           className="pill"
@@ -188,6 +232,11 @@ function ChordsEditor({
           Find chords (UG) ↗
         </a>
       </div>
+      {error && (
+        <p style={{ color: "var(--accent)", margin: "0.4rem 0 0", fontSize: "0.85rem" }}>
+          {error}
+        </p>
+      )}
       {open && (
         <div style={{ marginTop: "0.5rem" }}>
           <textarea

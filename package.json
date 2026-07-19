@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.3",
     "ioredis": "^5.11.1",
     "next": "^15.5.19",
     "react": "19.1.0",

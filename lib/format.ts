@@ -99,6 +99,25 @@ export function toLyricDoc(rec: {
   return null;
 }
 
+/**
+ * Chord sheets are stored per *song*, not per queue entry, so replaying a song
+ * next week reuses its saved chords. Keyed by LRCLIB id when we have one,
+ * else a slug of title+artist.
+ */
+export function chordKeyFor(item: {
+  lrclibId: number | null;
+  title: string;
+  artist: string;
+}): string {
+  if (item.lrclibId !== null) return `lrc-${item.lrclibId}`;
+  const slug = `${item.title} ${item.artist}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return `t-${slug || "unknown"}`;
+}
+
 function normalizeForMatch(s: string): string {
   return s
     .toLowerCase()

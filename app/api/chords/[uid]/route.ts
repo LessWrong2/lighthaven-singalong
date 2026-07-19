@@ -5,9 +5,10 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const MAX_SHEET_CHARS = 40_000;
-const UID_OK = /^[A-Za-z0-9-]{1,64}$/;
+const UID_OK = /^[A-Za-z0-9-]{1,100}$/;
 
-// GET /api/chords/[uid] — the pasted chord sheet for a queue item.
+// GET /api/chords/[uid] — the chord sheet for a song. The param is a song
+// key (see chordKeyFor in lib/format.ts), so sheets survive re-queueing.
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ uid: string }> },
