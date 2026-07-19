@@ -118,6 +118,7 @@ function mutate(state: SessionState, cmd: Command): void {
       const item = state.playlist.find((s) => s.uid === cmd.uid);
       if (!item) break;
       if (cmd.patch.hasChords !== undefined) item.hasChords = cmd.patch.hasChords;
+      if (cmd.patch.chordsRev !== undefined) item.chordsRev = cmd.patch.chordsRev;
       if (cmd.patch.defaultMode !== undefined) {
         item.defaultMode = cmd.patch.defaultMode;
         // Changing the current song's default also flips the live mode, so the

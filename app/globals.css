@@ -568,7 +568,16 @@ h1.app {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   font-size: calc(var(--lyric-scale, 1) * clamp(0.9rem, 1.8vw, 1.4rem));
   line-height: 1.4;
-  white-space: pre;
-  /* Chord letters pop; lyric lines stay readable. */
   color: var(--text);
+  /* Breathing room so the focused line can sit centered near the edges. */
+  padding: 40vh 0;
+}
+.sheet-line {
+  white-space: pre;
+  color: var(--muted);
+}
+/* The line being sung right now (matched against the synced lyrics). */
+.sheet-line.current {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
 }

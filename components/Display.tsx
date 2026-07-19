@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/useSession";
-import { activeLyricIndex, fmt } from "@/lib/format";
+import { activeLyricIndex, fmt, mapLyricsToSheet } from "@/lib/format";
 import { APP_NAME, CANONICAL_ID } from "@/lib/config";
 import { useLyrics } from "@/lib/useLyrics";
 
@@ -59,7 +59,8 @@ function DisplayInner({
   const [pos, setPos] = useState(0);
   const [showControls, setShowControls] = useState(false);
   const activeRef = useRef<HTMLParagraphElement>(null);
-  const chordsPreRef = useRef<HTMLPreElement>(null);
+  const chordsPreRef = useRef<HTMLDivElement>(null);
+  const sheetActiveRef = useRef<HTMLDivElement>(null);
   const [chordSheet, setChordSheet] = useState<{ uid: string; text: string | null } | null>(
     null,
   );
@@ -119,16 +120,26 @@ function DisplayInner({
       setPos(livePositionNow());
       const pre = chordsPreRef.current;
       if (pre) {
-        // Proportional follow for the chord sheet.
-        const frac =
-          modeRef.current === "band"
-            ? (lineIndexRef.current + 1) / Math.max(1, linesLenRef.current)
-            : durRef.current > 0
-              ? Math.min(1, livePositionNow() / durRef.current)
-              : 0;
-        const target = frac * Math.max(0, pre.scrollHeight - pre.clientHeight);
+        const focused = sheetActiveRef.current;
+        let target: number;
+        if (focused) {
+          // A sheet line matched the active lyric — center it, like the
+          // lyrics screen centers its active line.
+          target =
+            focused.offsetTop - pre.clientHeight / 2 + focused.clientHeight / 2;
+        } else {
+          // No text match (yet): fall back to proportional progress.
+          const frac =
+            modeRef.current === "band"
+              ? (lineIndexRef.current + 1) / Math.max(1, linesLenRef.current)
+              : durRef.current > 0
+                ? Math.min(1, livePositionNow() / durRef.current)
+                : 0;
+          target = frac * Math.max(0, pre.scrollHeight - pre.clientHeight);
+        }
+        target = Math.max(0, Math.min(target, pre.scrollHeight - pre.clientHeight));
         const delta = target - pre.scrollTop;
-        if (Math.abs(delta) > 2) pre.scrollTop += delta * 0.06;
+        if (Math.abs(delta) > 2) pre.scrollTop += delta * 0.08;
         return;
       }
       const el = activeRef.current;
@@ -152,31 +163,41 @@ function DisplayInner({
   }, [livePositionNow]);
 
   // Fetch the chord sheet when this is the /chords screen and the current
-  // song has one pasted.
+  // song has one pasted. Keyed on uid + revision so an edited sheet refetches.
   const currentUid = current?.uid;
   const currentHasChords = Boolean(current?.hasChords);
+  const sheetKey = currentUid ? `${currentUid}:${current?.chordsRev ?? 0}` : null;
   useEffect(() => {
-    if (!wantChords || !currentUid || !currentHasChords) return;
-    if (chordSheet?.uid === currentUid && chordSheet.text !== null) return;
+    if (!wantChords || !currentUid || !sheetKey || !currentHasChords) return;
+    if (chordSheet?.uid === sheetKey && chordSheet.text !== null) return;
     let cancelled = false;
     fetch(`/api/chords/${currentUid}`)
       .then(async (r) => (r.ok ? String((await r.json()).text ?? "") : ""))
       .catch(() => "")
       .then((text) => {
-        if (!cancelled) setChordSheet({ uid: currentUid, text });
+        if (!cancelled) setChordSheet({ uid: sheetKey, text });
       });
     return () => {
       cancelled = true;
     };
-  }, [wantChords, currentUid, currentHasChords, chordSheet]);
+  }, [wantChords, currentUid, sheetKey, currentHasChords, chordSheet]);
 
   // What this screen shows for the current song: the chord sheet when we're
   // the /chords screen and one exists (fall back to lyrics when it doesn't,
   // or when the sheet fails to load).
   const sheetText =
-    chordSheet && currentUid && chordSheet.uid === currentUid ? chordSheet.text : null;
+    chordSheet && sheetKey && chordSheet.uid === sheetKey ? chordSheet.text : null;
   const chordsActive =
     Boolean(wantChords) && currentHasChords && (sheetText === null || sheetText.length > 0);
+
+  const sheetLines = useMemo(() => (sheetText ? sheetText.split(/\r?\n/) : null), [sheetText]);
+  // lyric-line index -> sheet-line index, matched by text, so the sheet can
+  // follow the active lyric exactly.
+  const lines0 = doc?.lines;
+  const sheetMap = useMemo(
+    () => (sheetLines && lines0?.length ? mapLyricsToSheet(lines0, sheetLines) : null),
+    [sheetLines, lines0],
+  );
 
   // Band mode when the host says so, or forced when there are no timestamps
   // to follow (plain lyrics can only be driven by hand).
@@ -188,6 +209,18 @@ function DisplayInner({
       : lyStatus === "ready" && doc?.synced
         ? activeLyricIndex(lines, pos)
         : -1;
+
+  // Sheet line to focus on the chords screen: the match for the active lyric,
+  // or the most recent lyric before it that matched.
+  let sheetFocus = -1;
+  if (chordsActive && sheetMap) {
+    for (let i = Math.min(active, sheetMap.length - 1); i >= 0; i--) {
+      if (sheetMap[i] >= 0) {
+        sheetFocus = sheetMap[i];
+        break;
+      }
+    }
+  }
 
   // (Centering the active line happens continuously in the RAF loop above.)
 
@@ -358,10 +391,18 @@ function DisplayInner({
             </div>
           </div>
           <div className="lyrics chords-mode" style={{ "--lyric-scale": fontScale } as CSSProperties}>
-            {sheetText ? (
-              <pre ref={chordsPreRef} className="chord-sheet">
-                {sheetText}
-              </pre>
+            {sheetLines ? (
+              <div ref={chordsPreRef} className="chord-sheet">
+                {sheetLines.map((raw, j) => (
+                  <div
+                    key={j}
+                    ref={j === sheetFocus ? sheetActiveRef : undefined}
+                    className={`sheet-line ${j === sheetFocus ? "current" : ""}`}
+                  >
+                    {raw || " "}
+                  </div>
+                ))}
+              </div>
             ) : (
               <p className="lyric-line active muted">Loading chords…</p>
             )}

@@ -99,6 +99,54 @@ export function toLyricDoc(rec: {
   return null;
 }
 
+function normalizeForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Map each lyric line to the chord-sheet line that carries the same words, so
+ * the chords screen can follow the active lyric instead of guessing
+ * proportionally. Greedy and monotonic-first: search forward from the last
+ * match (verses appear in order), wrapping to the top for repeats a sheet
+ * writes only once (choruses). Unmatched lines stay -1 — the caller holds the
+ * previous position.
+ */
+export function mapLyricsToSheet(lyrics: LyricLine[], sheetLines: string[]): number[] {
+  const norms = sheetLines.map(normalizeForMatch);
+  const map = new Array<number>(lyrics.length).fill(-1);
+  let cursor = 0;
+  const matches = (a: string, b: string) =>
+    a === b || (a.length >= 8 && b.length >= 8 && (a.startsWith(b) || b.startsWith(a)));
+  for (let i = 0; i < lyrics.length; i++) {
+    const n = normalizeForMatch(lyrics[i].text);
+    if (n.length < 4) continue; // "♪", "oh", etc. — too weak to anchor on
+    let found = -1;
+    for (let j = cursor; j < norms.length; j++) {
+      if (norms[j] && matches(norms[j], n)) {
+        found = j;
+        break;
+      }
+    }
+    if (found < 0) {
+      for (let j = 0; j < cursor; j++) {
+        if (norms[j] && matches(norms[j], n)) {
+          found = j;
+          break;
+        }
+      }
+    }
+    if (found >= 0) {
+      map[i] = found;
+      cursor = found + 1;
+    }
+  }
+  return map;
+}
+
 /**
  * Index of the active lyric line for a given position (last cue at or before
  * pos). Returns -1 before the first cue. A small lookahead matches the line

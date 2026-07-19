@@ -22,6 +22,8 @@ export interface QueueItem {
   /** Whether a chord sheet has been pasted for this song (the sheet itself
    * lives in the chord store, fetched from /api/chords/[uid]). */
   hasChords?: boolean;
+  /** Bumped on every chord-sheet save so screens refetch an edited sheet. */
+  chordsRev?: number;
   /** Mode this song starts in when selected. */
   defaultMode: SongMode;
 }
@@ -81,7 +83,7 @@ export type Command =
   | {
       type: "updateItem";
       uid: string;
-      patch: Partial<Pick<QueueItem, "defaultMode" | "hasChords">>;
+      patch: Partial<Pick<QueueItem, "defaultMode" | "hasChords" | "chordsRev">>;
     }
   | { type: "reorder"; from: number; to: number }
   | { type: "reset" }

@@ -719,7 +719,11 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
             key={currentItem.uid}
             item={currentItem}
             onSaved={(hasChords) =>
-              sendCommand({ type: "updateItem", uid: currentItem.uid, patch: { hasChords } })
+              sendCommand({
+                type: "updateItem",
+                uid: currentItem.uid,
+                patch: { hasChords, chordsRev: Date.now() },
+              })
             }
           />
 

@@ -16,9 +16,11 @@ Adapted from
   Each screen has its own font / size / spacing settings (persisted per
   device).
 - **`/chords`** — same screen, but when the current song has a chord sheet
-  pasted it shows that instead (monospace, auto-scrolled in time with the
-  song). No chords → plain lyrics, identical to `/`. Point this one at the
-  band.
+  pasted it shows that instead. The sheet's lyric lines are text-matched
+  against the synced lyrics, so the line being sung is highlighted and kept
+  centered (with its chord line above it); unmatched sheets fall back to
+  proportional scrolling. No chords → plain lyrics, identical to `/`. Point
+  this one at the band.
 - **`/dashboard`** — the host desk. Search a song, hit **Play** (it goes on
   stage immediately — one song at a time is the normal flow; a collapsible
   queue panel is there via "▸ Queue" when you want to line songs up), then
