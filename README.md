@@ -15,8 +15,10 @@ Adapted from
 - **`/`** — the lyrics screen. Open it on every display, hit ⚙ → Fullscreen.
   Each screen has its own font / size / spacing settings (persisted per
   device).
-- **`/dashboard`** — the host desk. Search a song, add it to the queue, hit
-  **Go**, then drive it in one of two modes:
+- **`/dashboard`** — the host desk. Search a song, hit **Play** (it goes on
+  stage immediately — one song at a time is the normal flow; a collapsible
+  queue panel is there via "▸ Queue" when you want to line songs up), then
+  drive it in one of two modes:
   - **⏱ Auto mode** (default for songs with synced lyrics) — a virtual clock
     advances the words on the song's own LRC timestamps; no audio needed.
     **Space** starts/pauses, **←/→** jump a line, click a line to resync to

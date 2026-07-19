@@ -26,7 +26,13 @@ function badge(r: LyricsSearchResult): { label: string; cls: string } {
 }
 
 /** Song search against LRCLIB (via our proxy). */
-function SearchPanel({ onAdd }: { onAdd: (item: QueueItem) => void }) {
+function SearchPanel({
+  showQueue,
+  onPick,
+}: {
+  showQueue: boolean;
+  onPick: (item: QueueItem, playNow: boolean) => void;
+}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<LyricsSearchResult[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,19 +57,22 @@ function SearchPanel({ onAdd }: { onAdd: (item: QueueItem) => void }) {
     }
   }
 
-  function add(r: LyricsSearchResult) {
-    onAdd({
-      uid: crypto.randomUUID(),
-      title: r.title,
-      artist: r.artist,
-      album: r.album || undefined,
-      durationSec: r.durationSec || undefined,
-      lrclibId: r.lrclibId,
-      hasSynced: r.hasSynced,
-      // Synced lyrics can auto-advance on their own timestamps; otherwise
-      // the host drives lines by hand.
-      defaultMode: r.hasSynced ? "auto" : "band",
-    });
+  function pick(r: LyricsSearchResult, playNow: boolean) {
+    onPick(
+      {
+        uid: crypto.randomUUID(),
+        title: r.title,
+        artist: r.artist,
+        album: r.album || undefined,
+        durationSec: r.durationSec || undefined,
+        lrclibId: r.lrclibId,
+        hasSynced: r.hasSynced,
+        // Synced lyrics can auto-advance on their own timestamps; otherwise
+        // the host drives lines by hand.
+        defaultMode: r.hasSynced ? "auto" : "band",
+      },
+      playNow,
+    );
   }
 
   return (
@@ -101,7 +110,12 @@ function SearchPanel({ onAdd }: { onAdd: (item: QueueItem) => void }) {
                 <span className="muted" style={{ fontVariantNumeric: "tabular-nums" }}>
                   {r.durationSec ? fmt(r.durationSec) : ""}
                 </span>
-                <button onClick={() => add(r)}>Add</button>
+                <span className="cluster" style={{ gap: "0.3rem", flexWrap: "nowrap" }}>
+                  <button className="primary" onClick={() => pick(r, true)}>
+                    Play
+                  </button>
+                  {showQueue && <button onClick={() => pick(r, false)}>+ Queue</button>}
+                </span>
               </li>
             );
           })}
@@ -221,6 +235,17 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
   const { state, status, sendCommand } = useSession(sessionId);
 
   const [notFound, setNotFound] = useState(false);
+  // The queue is a secondary tool — normally one song is up at a time and
+  // "Play" swaps it directly; the queue panel is toggled open when the host
+  // wants to line songs up.
+  const [showQueue, setShowQueueState] = useState(false);
+  useEffect(() => {
+    setShowQueueState(window.localStorage.getItem("lighthaven:showQueue") === "1");
+  }, []);
+  const setShowQueue = (v: boolean) => {
+    setShowQueueState(v);
+    window.localStorage.setItem("lighthaven:showQueue", v ? "1" : "0");
+  };
   // Drag-and-drop reorder state.
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
@@ -531,14 +556,35 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
       </div>
 
       <p className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
-        Search a song, add it to the queue, hit Go. <strong>⏱ Auto</strong> advances the words
-        on the song&apos;s own timing (tempo slider to match the band, click a line to resync).{" "}
-        <strong>🎤 Band</strong> is fully manual — Space / arrows step lines.
+        Search a song and hit <strong>Play</strong> — it goes up on the screens right away.{" "}
+        <strong>⏱ Auto</strong> advances the words on the song&apos;s own timing (tempo slider
+        to match the band). <strong>🎤 Band</strong> is fully manual — Space / arrows step
+        lines.
       </p>
 
-      <SearchPanel onAdd={(item) => sendCommand({ type: "add", item })} />
+      <SearchPanel
+        showQueue={showQueue}
+        onPick={(item, playNow) => {
+          if (playNow) {
+            // The new song lands at the end of the list; put it on stage.
+            const target = playlistRef.current.length;
+            sendCommand({ type: "add", item }).then(() =>
+              sendCommand({ type: "select", index: target }),
+            );
+          } else {
+            sendCommand({ type: "add", item });
+          }
+        }}
+      />
 
-      <div className="card" style={{ marginTop: "1rem" }}>
+      <div className="cluster" style={{ marginTop: "0.75rem" }}>
+        <button className="ghost" onClick={() => setShowQueue(!showQueue)} aria-expanded={showQueue}>
+          {showQueue ? "▾ Hide queue" : `▸ Queue (${playlist.length})`}
+        </button>
+      </div>
+
+      {showQueue && (
+      <div className="card" style={{ marginTop: "0.5rem" }}>
         <div className="cluster" style={{ justifyContent: "space-between" }}>
           <strong>Queue ({playlist.length})</strong>
           <button
@@ -553,7 +599,7 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
         </div>
         {playlist.length === 0 ? (
           <p className="muted" style={{ marginBottom: 0 }}>
-            Search for a song above to get started.
+            Nothing queued — use &ldquo;+ Queue&rdquo; on a search result to line songs up.
           </p>
         ) : (
           <>
@@ -625,6 +671,7 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
           </>
         )}
       </div>
+      )}
 
       {/* Now playing */}
       {currentItem && (
@@ -634,9 +681,11 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
               <div className="title" style={{ fontStyle: "italic" }}>
                 {currentItem.title} <span className="muted">— {currentItem.artist}</span>
               </div>
-              <div className="muted">
-                Song {idx + 1} of {playlist.length}
-              </div>
+              {showQueue && (
+                <div className="muted">
+                  Song {idx + 1} of {playlist.length}
+                </div>
+              )}
             </div>
             <div className="mode-toggle" role="group" aria-label="Lyric mode">
               <button
