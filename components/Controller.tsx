@@ -178,14 +178,14 @@ function ChordsEditor({
         </button>
         <a
           className="pill"
-          href={`https://www.google.com/search?q=${encodeURIComponent(
-            `${item.title} ${item.artist} chords`,
+          href={`https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(
+            `${item.title} ${item.artist}`,
           )}`}
           target="_blank"
           rel="noreferrer"
-          title="Find a chord sheet in a new tab, then paste it here"
+          title="Search Ultimate Guitar in a new tab — open the top chords result, select-all + copy, paste here"
         >
-          Find chords ↗
+          Find chords (UG) ↗
         </a>
       </div>
       {open && (
