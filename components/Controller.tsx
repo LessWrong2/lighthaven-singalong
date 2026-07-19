@@ -377,13 +377,6 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
   const autoActive = mode === "auto" ? activeLyricIndex(lines, autoPos) : -1;
   const clockRunning = clockRef.current.playing;
 
-  // Keep the active line visible in the controller's auto-mode line list
-  // (runs after render, so the ref already points at the new row).
-  useEffect(() => {
-    if (modeRef.current === "auto")
-      activeLineRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [autoActive]);
-
   // ---- Band mode: line cursor ----
 
   // Optimistic cursor: rapid key presses must not wait for the server echo
@@ -449,13 +442,7 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [stepLine, setLine, clockPause, clockPlay, clockStepLine, clockSeek]);
 
-  // Keep the current band line visible in the controller's line list.
-  const activeLineRef = useRef<HTMLLIElement>(null);
   const lineIndex = state?.lineIndex ?? -1;
-  useEffect(() => {
-    if (modeRef.current === "band")
-      activeLineRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [lineIndex]);
 
   const goTo = useCallback(
     (target: number) => {
@@ -741,27 +728,22 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
                   Reset
                 </button>
               </div>
-              <p className="muted" style={{ margin: "0.4rem 0 0.6rem", fontSize: "0.85rem" }}>
-                Words advance on the song&apos;s own timing. Space = play/pause, ←/→ = jump a
-                line, click a line to resync to the band, tempo slider if they&apos;re playing
-                faster or slower than the record.
+              <div className="cluster" style={{ justifyContent: "center", marginTop: "0.4rem" }}>
+                <button onClick={() => clockStepLine(-1)} disabled={lines.length === 0}>
+                  ↶ Back a line
+                </button>
+                <span className="muted" style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {lines.length ? `line ${Math.max(0, autoActive) + 1} / ${lines.length}` : ""}
+                </span>
+                <button onClick={() => clockStepLine(1)} disabled={lines.length === 0}>
+                  Skip a line ↷
+                </button>
+              </div>
+              <p className="muted" style={{ margin: "0.4rem 0 0", fontSize: "0.85rem" }}>
+                Words advance on the song&apos;s own timing — watch any lyrics screen. Space =
+                play/pause, ←/→ = jump a line to resync to the band, tempo slider if
+                they&apos;re playing faster or slower than the record.
               </p>
-              <ol className="line-list">
-                {lyStatus === "loading" && <li className="muted">Loading lyrics…</li>}
-                {lines.map((line, i) => (
-                  <li
-                    key={i}
-                    ref={i === autoActive ? activeLineRef : undefined}
-                    className={`line-row ${i === autoActive ? "current" : ""} ${
-                      line.sectionStart ? "section-gap" : ""
-                    }`}
-                    onClick={() => line.t !== null && clockSeek(line.t)}
-                  >
-                    <span className="idx">{line.t !== null ? fmt(line.t) : i + 1}</span>
-                    <span>{line.text}</span>
-                  </li>
-                ))}
-              </ol>
             </>
           ) : (
             <>
@@ -790,28 +772,19 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
                   ⟲ Title card
                 </button>
               </div>
-              <p className="muted" style={{ margin: "0.4rem 0 0.6rem", fontSize: "0.85rem" }}>
-                Space / → advances a line, ← goes back. Click any line to jump there.
+              <p
+                className="muted"
+                style={{ margin: "0.4rem 0 0", fontSize: "0.85rem", textAlign: "center" }}
+              >
+                {lyStatus === "unavailable"
+                  ? "No lyrics found for this song."
+                  : lines.length
+                    ? `Line ${lineIndex + 1} of ${lines.length} — watch any lyrics screen for the words.`
+                    : "Loading lyrics…"}
               </p>
-              <ol className="line-list">
-                {lyStatus === "loading" && <li className="muted">Loading lyrics…</li>}
-                {lyStatus === "unavailable" && (
-                  <li className="muted">No lyrics found for this song.</li>
-                )}
-                {lines.map((line, i) => (
-                  <li
-                    key={i}
-                    ref={i === lineIndex ? activeLineRef : undefined}
-                    className={`line-row ${i === lineIndex ? "current" : ""} ${
-                      line.sectionStart ? "section-gap" : ""
-                    }`}
-                    onClick={() => setLine(i)}
-                  >
-                    <span className="idx">{i + 1}</span>
-                    <span>{line.text}</span>
-                  </li>
-                ))}
-              </ol>
+              <p className="muted" style={{ margin: "0.4rem 0 0", fontSize: "0.85rem" }}>
+                Space / → advances a line, ← goes back, Home returns to the title card.
+              </p>
             </>
           )}
         </div>

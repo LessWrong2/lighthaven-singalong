@@ -514,44 +514,6 @@ h1.app {
   gap: 0.6rem;
   margin-top: 0.9rem;
 }
-.line-list {
-  list-style: none;
-  margin: 0.5rem 0 0;
-  padding: 0;
-  max-height: 45vh;
-  overflow-y: auto;
-  border-top: 1px solid var(--line);
-}
-.line-row {
-  display: grid;
-  grid-template-columns: 2rem 1fr;
-  gap: 0.6rem;
-  padding: 0.3rem 0.2rem;
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  cursor: pointer;
-}
-.line-row:hover {
-  color: var(--text);
-}
-.line-row .idx {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.8rem;
-  opacity: 0.6;
-}
-.line-row.current {
-  color: var(--text);
-  font-style: italic;
-}
-.line-row.current .idx {
-  color: var(--accent);
-  opacity: 1;
-}
-.line-row.section-gap {
-  margin-top: 0.6rem;
-}
-
 /* ---------- Display extras ---------- */
 
 .display-artist {
