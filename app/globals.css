@@ -1,0 +1,600 @@
+:root {
+  /* Warm, near-black dark mode with cream text — restrained and paper-like. */
+  --bg: #141310;
+  --text: #e9e5d9;
+  --muted: #8d887b;
+  --line: #2b2925; /* hairline rules */
+  --line-strong: #423e35; /* slightly stronger rules / control borders */
+  --accent: #c2a35a; /* muted amber, used sparingly for "now" / live */
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+    Georgia, "Times New Roman", serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 18px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Links: ink-colored with a quiet underline, not a saturated accent. */
+a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--muted);
+}
+a:hover {
+  text-decoration-color: var(--text);
+}
+
+/* Buttons: outlined, square, flat. No fills except the inverted "primary". */
+button {
+  font: inherit;
+  cursor: pointer;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  padding: 0.4rem 0.8rem;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+button:hover {
+  border-color: var(--text);
+}
+button:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+button.primary {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+button.primary:hover {
+  background: var(--muted);
+  border-color: var(--muted);
+}
+button.ghost {
+  border-color: transparent;
+}
+button.ghost:hover {
+  border-color: var(--line-strong);
+}
+
+input[type="text"],
+input[type="number"] {
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line-strong);
+  border-radius: 0;
+  padding: 0.4rem 0.2rem;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.wrap {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 5rem;
+}
+
+/* A "card" is just a hairline frame now — no fill, no rounding. */
+.card {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 1.2rem 1.4rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* "Pill" reduced to a quiet label + dot; no chrome. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  padding: 0;
+  border: none;
+  background: none;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.dot.live {
+  background: var(--accent);
+}
+
+/* ---------- Playlist (controller) ---------- */
+
+.playlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/* A ruled list rather than a stack of boxes. */
+.track {
+  display: grid;
+  grid-template-columns: 1.2rem 1.8rem 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.2rem;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+}
+.track:first-child {
+  border-top: 1px solid var(--line);
+}
+/* The current track is marked by emphasis, not a filled background. */
+.track.current .title {
+  color: var(--text);
+  font-style: italic;
+}
+.track.current .idx {
+  color: var(--accent);
+}
+/* Drag-and-drop affordances */
+.track .handle {
+  cursor: grab;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1;
+  user-select: none;
+  font-size: 0.95rem;
+}
+.track .handle:active {
+  cursor: grabbing;
+}
+.track.dragging {
+  opacity: 0.4;
+}
+.track.drag-over {
+  box-shadow: inset 0 2px 0 0 var(--accent);
+}
+.track .idx {
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
+.track .title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.track .controls {
+  display: flex;
+  gap: 0.3rem;
+}
+.track .controls button {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+/* ---------- Transport bar ---------- */
+
+.transport {
+  position: sticky;
+  bottom: 0;
+  margin-top: 1.5rem;
+  background: var(--bg);
+  border: none;
+  border-top: 1px solid var(--line-strong);
+  border-radius: 0;
+  padding: 1rem 0.2rem 0.7rem;
+}
+.bigbtn {
+  font-size: 1rem;
+  padding: 0.55rem 1.1rem;
+}
+/* A thin flat rule, filled solid — no gradient, no rounding. */
+.progress {
+  position: relative;
+  height: 2px;
+  border-radius: 0;
+  background: var(--line-strong);
+  overflow: hidden;
+  margin: 0.7rem 0 0.4rem;
+}
+.progress > span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--text);
+}
+.times {
+  display: flex;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* ---------- Display mode ---------- */
+
+.display {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.display-head {
+  padding: 3vh 5vw 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+/* Fixed top-right hover target so the gear never scrolls away with the lyrics. */
+.settings-zone {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.6rem;
+  /* Generous padding makes the corner an easy hover target. */
+  padding: 0.8rem 0.9rem 2.5rem 2.5rem;
+}
+.settings-zone .gear {
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0.3rem 0.45rem;
+  border-radius: 0;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+}
+.settings-zone:hover .gear,
+.settings-zone:focus-within .gear,
+.settings-zone.open .gear {
+  opacity: 1;
+  transform: none;
+}
+.settings-panel {
+  width: min(340px, 92vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  /* Opaque so lyrics don't bleed through the overlay. */
+  background: var(--bg);
+}
+.display-title {
+  font-size: clamp(1.5rem, 4vw, 2.6rem);
+  font-weight: 400;
+  font-style: italic;
+  margin: 0;
+  letter-spacing: 0;
+}
+.display-sub {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.lyrics {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+  padding: 3vh 6vw;
+  text-align: center;
+}
+.lyric-line {
+  font-family: var(--lyric-font, inherit);
+  font-size: calc(var(--lyric-scale, 1) * clamp(1.4rem, 4vw, 3rem));
+  line-height: 1.15;
+  /* Spacing between lines, in em so it tracks font size. Negative => overlap. */
+  margin-top: calc(var(--lyric-space, 0.3) * 1em);
+  font-weight: 400;
+  color: var(--muted);
+  opacity: 0.4;
+  transition: opacity 0.25s ease, color 0.25s ease;
+}
+.lyric-line:first-child {
+  margin-top: 0;
+}
+/* Emphasis by ink + presence only — no scaling, no glow. */
+.lyric-line.active {
+  color: var(--text);
+  opacity: 1;
+}
+.display-foot {
+  padding: 0 5vw 3vh;
+}
+.display .progress {
+  height: 2px;
+}
+
+/* ---------- Concert page (canonical "/") ---------- */
+
+.concert-mark {
+  text-align: center;
+  padding: 2.4vh 1rem 2vh;
+  font-style: italic;
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.poster {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 5vh 6vw;
+}
+.poster-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.32em;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.poster-title {
+  font-weight: 400;
+  font-style: italic;
+  font-size: clamp(2rem, 6vw, 3.6rem);
+  margin: 0.3rem 0 1.8rem;
+  letter-spacing: 0;
+}
+/* The setlist as a tasteful printed program. */
+.setlist {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  text-align: left;
+  columns: 2;
+  column-gap: 3rem;
+  max-width: 680px;
+  width: 100%;
+}
+@media (max-width: 560px) {
+  .setlist {
+    columns: 1;
+  }
+}
+.setlist li {
+  display: flex;
+  gap: 0.7rem;
+  align-items: baseline;
+  break-inside: avoid;
+  padding: 0.2rem 0;
+  color: var(--muted);
+}
+.setlist .setlist-idx {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  min-width: 1.4rem;
+  text-align: right;
+  color: var(--muted);
+  opacity: 0.6;
+}
+.setlist li.cued .setlist-title {
+  color: var(--text);
+  font-style: italic;
+}
+.setlist li.cued .setlist-idx {
+  color: var(--accent);
+  opacity: 1;
+}
+.poster-foot {
+  margin-top: 1.8rem;
+  font-size: 0.85rem;
+}
+
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+h1.app {
+  font-size: 1.5rem;
+  font-weight: 400;
+  margin: 0 0 0.25rem;
+  letter-spacing: 0;
+}
+
+/* ---------- Song search (controller) ---------- */
+
+.search-results {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.result-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.45rem 0.2rem;
+  border-bottom: 1px solid var(--line);
+}
+.result-row:first-child {
+  border-top: 1px solid var(--line);
+}
+.result-row .title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-row button {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.badge {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+.badge-synced {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.badge-plain {
+  color: var(--muted);
+}
+
+/* ---------- Queue extras (controller) ---------- */
+
+.mode-chip {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.yt-input {
+  width: 10.5rem;
+  font-size: 0.85rem;
+}
+.yt-input.bad {
+  border-bottom-color: var(--accent);
+}
+
+/* ---------- Now playing: mode toggle + YouTube player ---------- */
+
+.mode-toggle {
+  display: inline-flex;
+  gap: 0;
+}
+.mode-toggle button {
+  border-radius: 0;
+}
+.mode-toggle button + button {
+  border-left: none;
+}
+
+/* Player container. Per the YouTube API TOS the player must remain visible —
+   it shrinks in band mode but is never hidden while a video is loaded. */
+.yt-wrap {
+  margin-top: 0.75rem;
+}
+.yt-frame {
+  position: relative;
+  width: min(480px, 100%);
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  background: #000;
+}
+.yt-wrap.yt-mini .yt-frame {
+  width: 220px;
+  margin-left: auto;
+}
+.yt-frame iframe,
+.yt-frame > div {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------- Band mode: teleprompter controls (controller) ---------- */
+
+.bigline-btns {
+  display: flex;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+.line-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  max-height: 45vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+}
+.line-row {
+  display: grid;
+  grid-template-columns: 2rem 1fr;
+  gap: 0.6rem;
+  padding: 0.3rem 0.2rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  cursor: pointer;
+}
+.line-row:hover {
+  color: var(--text);
+}
+.line-row .idx {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  opacity: 0.6;
+}
+.line-row.current {
+  color: var(--text);
+  font-style: italic;
+}
+.line-row.current .idx {
+  color: var(--accent);
+  opacity: 1;
+}
+.line-row.section-gap {
+  margin-top: 0.6rem;
+}
+
+/* ---------- Display extras ---------- */
+
+.display-artist {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 0.75em;
+}
+.lyric-line.section-gap {
+  margin-top: calc(var(--lyric-space, 0.3) * 1em + 0.9em);
+}
+.titlecard-artist {
+  font-size: clamp(1.1rem, 3vw, 1.8rem);
+  color: var(--muted);
+  margin-top: -1rem;
+}

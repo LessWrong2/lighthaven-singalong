@@ -1,0 +1,19 @@
+# dependencies
+/node_modules
+
+# next.js build output
+/.next
+/out
+
+# vercel
+/.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# local env / logs
+.env*
+*.log
+dev.log
+.vercel
