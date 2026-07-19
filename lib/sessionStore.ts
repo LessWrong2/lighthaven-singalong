@@ -251,9 +251,12 @@ const stateKey = (id: string) => `lighthaven:session:${id.toUpperCase()}`;
 const channel = (id: string) => `lighthaven:chan:${id.toUpperCase()}`;
 
 /** ioredis parses scheme-less URLs as unix socket paths, so a REDIS_URL pasted
- * as `user:pass@host:port` fails with ENOENT — normalize it. */
+ * as `user:pass@host:port` fails with ENOENT — normalize it. Pasted values may
+ * also carry stray newlines/spaces (dashboard line-wrap); URLs can't legally
+ * contain whitespace, so strip it all before checking for a scheme. */
 function normalizeRedisUrl(url: string): string {
-  return url.includes("://") ? url : `redis://${url}`;
+  const clean = url.replace(/\s+/g, "");
+  return clean.includes("://") ? clean : `redis://${clean}`;
 }
 
 /** An unhandled ioredis "error" event crashes the serverless function; log it
@@ -349,7 +352,7 @@ function makeRedisBackend(rawUrl: string): Backend {
 // Backend selection
 // ---------------------------------------------------------------------------
 
-const REDIS_URL = process.env.REDIS_URL;
+const REDIS_URL = process.env.REDIS_URL?.trim();
 
 /** True when the Redis backend is active (multi-instance safe). */
 export const usingRedis = Boolean(REDIS_URL);
