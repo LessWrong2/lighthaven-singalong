@@ -612,8 +612,8 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
       <p className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
         Search a song and hit <strong>Play</strong> — it goes up on the screens right away.{" "}
         <strong>⏱ Auto</strong> advances the words on the song&apos;s own timing (tempo slider
-        to match the band). <strong>🎤 Band</strong> is fully manual — Space / arrows step
-        lines.
+        to match the band). <strong>🎤 Band</strong> is fully manual
+        <span className="kbd-hint"> — Space / arrows step lines</span>.
       </p>
 
       <SearchPanel
@@ -695,6 +695,20 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
                       }
                     >
                       {MODE_CHIP[song.defaultMode]}
+                    </button>
+                    <button
+                      title="Move up"
+                      disabled={i === 0}
+                      onClick={() => sendCommand({ type: "reorder", from: i, to: i - 1 })}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      title="Move down"
+                      disabled={i === playlist.length - 1}
+                      onClick={() => sendCommand({ type: "reorder", from: i, to: i + 1 })}
+                    >
+                      ↓
                     </button>
                     <button title="Remove" onClick={() => sendCommand({ type: "remove", uid: song.uid })}>
                       ✕
@@ -847,9 +861,11 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
                 </button>
               </div>
               <p className="muted" style={{ margin: "0.4rem 0 0", fontSize: "0.85rem" }}>
-                Words advance on the song&apos;s own timing — watch any lyrics screen. Space =
-                play/pause, ←/→ = jump a line to resync to the band, tempo slider if
-                they&apos;re playing faster or slower than the record.
+                Words advance on the song&apos;s own timing — watch any lyrics screen.{" "}
+                <span className="kbd-hint">
+                  Space = play/pause, ←/→ = jump a line to resync to the band,{" "}
+                </span>
+                tempo slider if they&apos;re playing faster or slower than the record.
               </p>
             </>
           ) : (
@@ -889,7 +905,7 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
                     ? `Line ${lineIndex + 1} of ${lines.length} — watch any lyrics screen for the words.`
                     : "Loading lyrics…"}
               </p>
-              <p className="muted" style={{ margin: "0.4rem 0 0", fontSize: "0.85rem" }}>
+              <p className="muted kbd-hint" style={{ margin: "0.4rem 0 0", fontSize: "0.85rem" }}>
                 Space / → advances a line, ← goes back, Home returns to the title card.
               </p>
             </>

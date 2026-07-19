@@ -581,3 +581,90 @@ h1.app {
   color: var(--text);
   background: rgba(255, 255, 255, 0.05);
 }
+
+/* ---------- Mobile ---------- */
+
+@media (max-width: 640px) {
+  .wrap {
+    padding: 1.25rem 1rem 2.5rem;
+  }
+  /* The now-playing panel is taller than the leftover viewport on phones;
+     sticky-bottom would ride up and cover the queue. Let it flow. */
+  .transport {
+    position: static;
+  }
+  h1.app {
+    font-size: 1.25rem;
+  }
+  .display-head {
+    flex-wrap: wrap;
+    padding: 2vh 4vw 0;
+    gap: 0.4rem;
+  }
+  .chord-sheet {
+    font-size: calc(var(--lyric-scale, 1) * 0.8rem);
+    padding: 20vh 0;
+  }
+
+  /* Search results: stack each row — title on its own line, meta + actions
+     below it. */
+  .result-row {
+    grid-template-columns: auto auto 1fr;
+    row-gap: 0.3rem;
+    padding: 0.6rem 0.2rem;
+  }
+  .result-row .title {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+  .result-row > :last-child {
+    justify-self: end;
+  }
+  .result-row button {
+    white-space: nowrap;
+  }
+  .search-results {
+    overflow-x: hidden;
+  }
+
+  /* Queue rows: title row, then the controls on their own line. */
+  .track {
+    grid-template-columns: 1.2rem 1.4rem 1fr;
+    row-gap: 0.35rem;
+  }
+  .track .controls {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+}
+
+/* Touch devices: bigger tap targets, no drag handle (HTML5 drag-and-drop
+   doesn't exist on touch — the ↑/↓ buttons are the reorder path), no
+   keyboard-shortcut hints. */
+@media (pointer: coarse) {
+  button {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+  }
+  .track .controls button,
+  .result-row button {
+    min-height: 40px;
+    padding: 0.4rem 0.7rem;
+  }
+  .kbd-hint {
+    display: none;
+  }
+  input[type="range"] {
+    height: 2rem;
+  }
+}
+
+/* Touch / no-hover devices: the settings gear can't be hover-revealed —
+   keep it visible. */
+@media (hover: none) {
+  .settings-zone .gear {
+    opacity: 1;
+    transform: none;
+  }
+}
