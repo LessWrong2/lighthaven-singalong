@@ -16,16 +16,25 @@ Adapted from
   Each screen has its own font / size / spacing settings (persisted per
   device).
 - **`/dashboard`** — the host desk. Search a song, add it to the queue, hit
-  **Go**, then drive it in one of two modes:
-  - **🎤 Band mode** (default) — the band plays live; you advance the words by
-    hand: **Space / →** next line, **←** back, click any line to jump, Home for
-    the title card. Screens jump instantly. Works with synced *and* plain
-    (untimed) lyrics.
-  - **▶ Playback mode** — this device plays the actual recording via an
+  **Go**, then drive it in one of three modes:
+  - **⏱ Auto mode** (default for songs with synced lyrics) — a virtual clock
+    advances the words on the song's own LRC timestamps; no audio or YouTube
+    link needed. **Space** starts/pauses, **←/→** jump a line, click a line to
+    resync to wherever the band actually is, and the **tempo slider**
+    (70–130%) matches the clock to a band playing faster or slower than the
+    record.
+  - **🎤 Band mode** — fully manual teleprompter: **Space / →** next line,
+    **←** back, click any line to jump, Home for the title card. Works with
+    synced *and* plain (untimed) lyrics.
+  - **▶ YouTube mode** — this device plays the actual recording via an
     embedded YouTube player (keep it connected to the PA) and the words follow
-    the playback clock automatically. Needs synced lyrics **and** a YouTube
-    link pasted on the queue row (the `YT ↗` button opens a search to copy one
-    from).
+    the playback clock. Needs a YouTube link pasted on the queue row.
+
+  **🎸 Chords**: paste a chord sheet for the current song (the "Find chords ↗"
+  link opens a search; there's no free chords API, so it's copy-paste). Any
+  display can flip on **⚙ → 🎸 Band screen (chords)** to show that sheet in
+  monospace — aligned chords over lyrics — auto-scrolling in time with the
+  song. Point that screen at the band; the rest keep showing lyrics.
 
 `/controller?s=CODE` and `/display?s=CODE` still exist for ad-hoc side
 sessions; normal use is the single canonical session (`HAVEN`).

@@ -55,6 +55,14 @@ function DisplayInner({
   const [pos, setPos] = useState(0);
   const [showControls, setShowControls] = useState(false);
   const activeRef = useRef<HTMLParagraphElement>(null);
+  const chordsPreRef = useRef<HTMLPreElement>(null);
+
+  // "Band screen": show the song's pasted chord sheet instead of lyrics,
+  // auto-scrolled in time. Per-device, persisted.
+  const [chordsView, setChordsViewState] = useState(false);
+  const [chordSheet, setChordSheet] = useState<{ uid: string; text: string | null } | null>(
+    null,
+  );
 
   // Per-device lyric appearance, persisted in localStorage so each display
   // screen keeps its own font size / line spacing across reloads.
@@ -68,7 +76,12 @@ function DisplayInner({
     if (Number.isFinite(fs) && fs > 0) setFontScale(fs);
     if (ls !== null && Number.isFinite(Number(ls))) setLineSpace(Number(ls));
     if (fk && FONTS.some((f) => f.key === fk)) setFontKey(fk);
+    setChordsViewState(window.localStorage.getItem("lighthaven:chordsView") === "1");
   }, []);
+  const setChordsView = (v: boolean) => {
+    setChordsViewState(v);
+    window.localStorage.setItem("lighthaven:chordsView", v ? "1" : "0");
+  };
   const updateFontScale = (v: number) => {
     setFontScale(v);
     window.localStorage.setItem("lighthaven:fontScale", String(v));
@@ -87,29 +100,80 @@ function DisplayInner({
     fetch(`/api/session/${sessionId}/state`).then((r) => setNotFound(r.status === 404));
   }, [sessionId]);
 
-  // Tick the synced position (only meaningful in playback mode; cheap always),
-  // and ease the window scroll so the active line drifts to center. This is a
-  // hand-rolled follow because scrollIntoView({behavior:"smooth"}) gets
-  // cancelled by the per-frame re-renders and never completes.
+  const current = state?.playlist[state.currentIndex];
+  const { status: lyStatus, doc } = useLyrics(current);
+  const lines = doc?.lines ?? [];
+
+  // Refs the animation loop reads (it must never go stale between renders).
+  const modeRef = useRef(state?.mode);
+  modeRef.current = state?.mode;
+  const durRef = useRef(0);
+  durRef.current = state?.durationSec ?? 0;
+  const lineIndexRef = useRef(-1);
+  lineIndexRef.current = state?.lineIndex ?? -1;
+  const linesLenRef = useRef(0);
+  linesLenRef.current = lines.length;
+
+  // Tick the synced position and ease the scroll: the active lyric line
+  // drifts to center, or (band screen) the chord sheet scrolls proportionally
+  // to song progress. Hand-rolled because scrollIntoView({behavior:"smooth"})
+  // gets cancelled by the per-frame re-renders and never completes. rAF stops
+  // in occluded windows, so a coarse interval keeps the position moving too.
   useEffect(() => {
-    let raf: number;
-    const loop = () => {
+    const tick = () => {
       setPos(livePositionNow());
+      const pre = chordsPreRef.current;
+      if (pre) {
+        // Proportional follow for the chord sheet.
+        const frac =
+          modeRef.current === "band"
+            ? (lineIndexRef.current + 1) / Math.max(1, linesLenRef.current)
+            : durRef.current > 0
+              ? Math.min(1, livePositionNow() / durRef.current)
+              : 0;
+        const target = frac * Math.max(0, pre.scrollHeight - pre.clientHeight);
+        const delta = target - pre.scrollTop;
+        if (Math.abs(delta) > 2) pre.scrollTop += delta * 0.06;
+        return;
+      }
       const el = activeRef.current;
       if (el) {
         const rect = el.getBoundingClientRect();
         const delta = rect.top + rect.height / 2 - window.innerHeight / 2;
         if (Math.abs(delta) > 4) window.scrollBy(0, delta * 0.08);
       }
+    };
+    let raf: number;
+    const loop = () => {
+      tick();
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    const fallback = setInterval(tick, 500);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearInterval(fallback);
+    };
   }, [livePositionNow]);
 
-  const current = state?.playlist[state.currentIndex];
-  const { status: lyStatus, doc } = useLyrics(current);
-  const lines = doc?.lines ?? [];
+  // Fetch the chord sheet when this screen is a band screen and the current
+  // song has one pasted.
+  const currentUid = current?.uid;
+  const currentHasChords = Boolean(current?.hasChords);
+  useEffect(() => {
+    if (!chordsView || !currentUid || !currentHasChords) return;
+    if (chordSheet?.uid === currentUid && chordSheet.text !== null) return;
+    let cancelled = false;
+    fetch(`/api/chords/${currentUid}`)
+      .then(async (r) => (r.ok ? String((await r.json()).text ?? "") : ""))
+      .catch(() => "")
+      .then((text) => {
+        if (!cancelled) setChordSheet({ uid: currentUid, text });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chordsView, currentUid, currentHasChords, chordSheet]);
 
   // Band mode when the host says so, or forced when there are no timestamps
   // to follow (plain lyrics can only be driven by hand).
@@ -165,6 +229,17 @@ function DisplayInner({
             <strong>This screen</strong>
             <button className="ghost" onClick={toggleFullscreen}>
               ⛶ Fullscreen
+            </button>
+          </div>
+
+          <div className="cluster" style={{ marginTop: "0.6rem" }}>
+            <button
+              className={chordsView ? "primary" : "ghost"}
+              aria-pressed={chordsView}
+              title="Show the song's chord sheet instead of lyrics — for the screen facing the band"
+              onClick={() => setChordsView(!chordsView)}
+            >
+              🎸 Band screen (chords)
             </button>
           </div>
 
@@ -272,7 +347,42 @@ function DisplayInner({
 
       {concert && <div className="concert-mark">{APP_NAME}</div>}
 
-      {showTitleCard ? (
+      {chordsView ? (
+        <>
+          <div className="display-head">
+            <h1 className="display-title">
+              {current.title} <span className="display-artist">· {current.artist}</span>
+            </h1>
+            <div className="cluster">
+              <span className="display-sub">
+                {fmt(pos)}
+                {dur > 0 ? ` / ${fmt(dur)}` : ""}
+              </span>
+              <span className="pill">
+                <span className={`dot ${status.connected ? "live" : ""}`} />
+                {status.connected ? "🎸 Band screen" : "…"}
+              </span>
+            </div>
+          </div>
+          <div className="lyrics chords-mode" style={{ "--lyric-scale": fontScale } as CSSProperties}>
+            {!current.hasChords ? (
+              <p className="lyric-line active muted">
+                No chords pasted for this song — add them on the dashboard (🎸 Chords).
+              </p>
+            ) : chordSheet?.uid === current.uid && chordSheet.text !== null ? (
+              chordSheet.text ? (
+                <pre ref={chordsPreRef} className="chord-sheet">
+                  {chordSheet.text}
+                </pre>
+              ) : (
+                <p className="lyric-line active muted">Couldn&apos;t load the chord sheet.</p>
+              )
+            ) : (
+              <p className="lyric-line active muted">Loading chords…</p>
+            )}
+          </div>
+        </>
+      ) : showTitleCard ? (
         <div className="poster">
           <div className="poster-kicker">Up now</div>
           <h1 className="poster-title">{current.title}</h1>

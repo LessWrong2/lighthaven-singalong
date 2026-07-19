@@ -2,6 +2,7 @@
 
 /** How lyrics advance for a song. */
 export type SongMode =
+  | "auto" // virtual clock advances lyrics on the LRC timestamps (no audio)
   | "playback" // host plays the recording (YouTube); lyrics follow its clock
   | "band"; // live band; host advances lines manually (teleprompter)
 
@@ -21,6 +22,9 @@ export interface QueueItem {
   hasSynced: boolean;
   /** YouTube video id for playback mode, if the host attached one. */
   youtubeVideoId?: string;
+  /** Whether a chord sheet has been pasted for this song (the sheet itself
+   * lives in the chord store, fetched from /api/chords/[uid]). */
+  hasChords?: boolean;
   /** Mode this song starts in when selected. */
   defaultMode: SongMode;
 }
@@ -51,6 +55,9 @@ export interface SessionState {
   positionSec: number;
   /** Duration of the current song (seconds), reported by the controller. */
   durationSec: number;
+  /** Clock rate (1 = recording speed). Auto mode's tempo trim; clients
+   * multiply elapsed wall time by this when extrapolating position. */
+  rate: number;
   /** Band-mode cursor: index of the current lyric line; -1 = title card. */
   lineIndex: number;
   /** Server epoch ms when the transport fields were last set. */
@@ -65,8 +72,9 @@ export interface StateEnvelope {
 
 /** Commands the controller can POST to mutate session state. */
 export type Command =
-  // Controller reports its real player transport (playback mode).
-  | { type: "sync"; isPlaying: boolean; positionSec: number; durationSec: number }
+  // Controller reports its transport (playback / auto modes). rate defaults
+  // to 1 (YouTube playback); auto mode sends its tempo trim.
+  | { type: "sync"; isPlaying: boolean; positionSec: number; durationSec: number; rate?: number }
   // Song selection (resets transport + line cursor, adopts the song's mode).
   | { type: "select"; index: number }
   | { type: "next" }
@@ -77,7 +85,7 @@ export type Command =
   | {
       type: "updateItem";
       uid: string;
-      patch: Partial<Pick<QueueItem, "youtubeVideoId" | "defaultMode">>;
+      patch: Partial<Pick<QueueItem, "youtubeVideoId" | "defaultMode" | "hasChords">>;
     }
   | { type: "reorder"; from: number; to: number }
   | { type: "reset" }

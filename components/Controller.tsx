@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "@/lib/useSession";
 import { useLyrics } from "@/lib/useLyrics";
-import { fmt } from "@/lib/format";
+import { activeLyricIndex, fmt } from "@/lib/format";
 import { APP_NAME, CANONICAL_ID } from "@/lib/config";
 import { extractVideoId, useYouTubePlayer } from "@/lib/youtube";
 import type { LyricsSearchResult, QueueItem, SongMode } from "@/lib/types";
@@ -61,9 +61,9 @@ function SearchPanel({ onAdd }: { onAdd: (item: QueueItem) => void }) {
       durationSec: r.durationSec || undefined,
       lrclibId: r.lrclibId,
       hasSynced: r.hasSynced,
-      // Playback needs a YouTube video attached before it can actually run;
-      // band mode is the safe default for a live-band event.
-      defaultMode: "band",
+      // Synced lyrics can auto-advance on their own timestamps; otherwise
+      // the host drives lines by hand.
+      defaultMode: r.hasSynced ? "auto" : "band",
     });
   }
 
@@ -181,6 +181,116 @@ function YtField({
   );
 }
 
+/** Paste-in chord sheet editor for the current song. The sheet is stored
+ * server-side (chord store) and shown on displays that turn on "Band screen"
+ * in their ⚙ settings, auto-scrolled in time with the song. */
+function ChordsEditor({
+  item,
+  onSaved,
+}: {
+  item: QueueItem;
+  onSaved: (hasChords: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function toggle() {
+    if (!open && draft === null) {
+      try {
+        const r = await fetch(`/api/chords/${item.uid}`);
+        setDraft(r.ok ? String((await r.json()).text ?? "") : "");
+      } catch {
+        setDraft("");
+      }
+    }
+    setOpen((o) => !o);
+  }
+
+  async function save() {
+    if (draft === null || busy) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/chords/${item.uid}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: draft }),
+      });
+      const b = (await r.json()) as { ok: boolean; hasChords: boolean };
+      if (b.ok) {
+        onSaved(b.hasChords);
+        setOpen(false);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: "0.5rem" }}>
+      <div className="cluster">
+        <button className="ghost" onClick={toggle} aria-expanded={open}>
+          🎸 Chords{item.hasChords ? " ✓" : ""}
+        </button>
+        <a
+          className="pill"
+          href={`https://www.google.com/search?q=${encodeURIComponent(
+            `${item.title} ${item.artist} chords`,
+          )}`}
+          target="_blank"
+          rel="noreferrer"
+          title="Find a chord sheet in a new tab, then paste it here"
+        >
+          Find chords ↗
+        </a>
+      </div>
+      {open && (
+        <div style={{ marginTop: "0.5rem" }}>
+          <textarea
+            className="chords-input"
+            rows={10}
+            placeholder={"Paste a chord sheet here (e.g. from a chords site):\n\n[Verse 1]\nA          G/A\nI hear the drums echoing tonight…"}
+            value={draft ?? ""}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <div className="cluster" style={{ marginTop: "0.4rem" }}>
+            <button className="primary" onClick={save} disabled={busy || draft === null}>
+              {busy ? "Saving…" : "Save chords"}
+            </button>
+            <button className="ghost" onClick={() => setOpen(false)}>
+              Close
+            </button>
+            <span className="muted" style={{ fontSize: "0.8rem" }}>
+              Shows on screens with &ldquo;🎸 Band screen&rdquo; turned on (⚙ on the display),
+              scrolling in time with the song.
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Next mode when clicking a queue row's chip: band → auto → youtube → band,
+ * skipping modes the song can't do. */
+function cycleMode(song: QueueItem): SongMode {
+  const order: SongMode[] = ["band", "auto", "playback"];
+  const i = order.indexOf(song.defaultMode);
+  for (let k = 1; k <= order.length; k++) {
+    const cand = order[(i + k) % order.length];
+    if (cand === "band") return cand;
+    if (cand === "auto" && song.hasSynced) return cand;
+    if (cand === "playback" && song.hasSynced && song.youtubeVideoId) return cand;
+  }
+  return "band";
+}
+
+const MODE_CHIP: Record<SongMode, string> = {
+  band: "🎤 band",
+  auto: "⏱ auto",
+  playback: "▶ youtube",
+};
+
 function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
   const params = useSearchParams();
   // Prop wins, then an explicit ?s= code, else the canonical session.
@@ -213,6 +323,8 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
   // Refs so event handlers (keyboard, player events) never go stale.
   const stateRef = useRef(state);
   stateRef.current = state;
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
   const linesLenRef = useRef(0);
   linesLenRef.current = lines.length;
   const modeRef = useRef(mode);
@@ -275,14 +387,138 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
     getAutoplay: () => wantPlayRef.current && modeRef.current === "playback",
   });
 
-  // Clear stale player errors, the sync-throttle anchor, and the optimistic
-  // line cursor when the song changes.
+  // Clear stale player errors, the sync-throttle anchor, the optimistic line
+  // cursor, and the auto-mode clock when the song changes.
   const currentUid = currentItem?.uid;
   useEffect(() => {
     setYtError(null);
     lastSentRef.current = null;
     sentLineRef.current = null;
+    clockRef.current = { playing: false, pos: 0, atMs: 0, rate: 1 };
+    setTempoState(1);
   }, [currentUid]);
+
+  // ---- Auto mode: a virtual clock advances lyrics on the LRC timestamps ----
+  //
+  // No audio, no YouTube: the timing embedded in the synced lyrics (fetched
+  // with the lyrics themselves) drives the words at the recording's pace. The
+  // tempo slider scales the clock for a band playing faster or slower, and
+  // clicking a line snaps the clock to that line's timestamp.
+
+  const [tempo, setTempoState] = useState(1);
+  const [, setClockTick] = useState(0); // re-render while the clock runs
+  const clockRef = useRef({ playing: false, pos: 0, atMs: 0, rate: 1 });
+  const lastClockSendRef = useRef(0);
+
+  const lastCueSec = lines.length ? (lines[lines.length - 1].t ?? 0) : 0;
+  const autoDuration = Math.max(currentItem?.durationSec ?? 0, lastCueSec + 8);
+  const autoDurationRef = useRef(autoDuration);
+  autoDurationRef.current = autoDuration;
+
+  const clockPosNow = useCallback(() => {
+    const c = clockRef.current;
+    const pos = c.playing ? c.pos + ((Date.now() - c.atMs) / 1000) * c.rate : c.pos;
+    return Math.min(pos, autoDurationRef.current);
+  }, []);
+
+  /** Re-anchor the clock at "now" and broadcast the transport. */
+  const clockSync = useCallback(() => {
+    const c = clockRef.current;
+    c.pos = clockPosNow();
+    c.atMs = Date.now();
+    lastClockSendRef.current = c.atMs;
+    sendCommand({
+      type: "sync",
+      isPlaying: c.playing,
+      positionSec: c.pos,
+      durationSec: autoDurationRef.current,
+      rate: c.rate,
+    });
+    setClockTick((x) => x + 1);
+  }, [clockPosNow, sendCommand]);
+
+  const clockPlay = useCallback(() => {
+    clockRef.current.playing = true;
+    clockRef.current.atMs = Date.now();
+    clockSync();
+  }, [clockSync]);
+
+  const clockPause = useCallback(() => {
+    const c = clockRef.current;
+    c.pos = clockPosNow();
+    c.playing = false;
+    clockSync();
+  }, [clockPosNow, clockSync]);
+
+  const clockSeek = useCallback(
+    (sec: number) => {
+      const c = clockRef.current;
+      c.pos = Math.max(0, Math.min(autoDurationRef.current, sec));
+      c.atMs = Date.now();
+      clockSync();
+    },
+    [clockSync],
+  );
+
+  const setTempo = useCallback(
+    (r: number) => {
+      const c = clockRef.current;
+      c.pos = clockPosNow(); // anchor at the old rate before switching
+      c.atMs = Date.now();
+      c.rate = r;
+      setTempoState(r);
+      clockSync();
+    },
+    [clockPosNow, clockSync],
+  );
+
+  /** Seek to the cue of the line `delta` away from the currently active one. */
+  const clockStepLine = useCallback(
+    (delta: number) => {
+      const ls = linesRef.current;
+      if (!ls.length) return;
+      const cur = activeLyricIndex(ls, clockPosNow());
+      const target = Math.max(0, Math.min(ls.length - 1, cur + delta));
+      const t = ls[target].t;
+      if (t !== null) clockSeek(t);
+    },
+    [clockPosNow, clockSeek],
+  );
+
+  // While auto mode runs: repaint, re-anchor every ~3s so displays can't
+  // drift, and cue up the next song when the clock passes the end.
+  useEffect(() => {
+    if (mode !== "auto") return;
+    const t = setInterval(() => {
+      setClockTick((x) => x + 1);
+      const c = clockRef.current;
+      if (!c.playing) return;
+      if (clockPosNow() >= autoDurationRef.current) {
+        c.pos = autoDurationRef.current;
+        c.playing = false;
+        clockSync();
+        const pl = playlistRef.current;
+        const i = idxRef.current;
+        if (i < pl.length - 1) sendCommand({ type: "select", index: i + 1 });
+        return;
+      }
+      if (Date.now() - lastClockSendRef.current >= 3000) clockSync();
+    }, 300);
+    return () => clearInterval(t);
+  }, [mode, clockPosNow, clockSync, sendCommand]);
+
+  // Auto-mode readouts (recomputed on every clock-tick render).
+  const autoPos = clockPosNow();
+  const autoFrac = autoDuration > 0 ? Math.min(1, autoPos / autoDuration) : 0;
+  const autoActive = mode === "auto" ? activeLyricIndex(lines, autoPos) : -1;
+  const clockRunning = clockRef.current.playing;
+
+  // Keep the active line visible in the controller's auto-mode line list
+  // (runs after render, so the ref already points at the new row).
+  useEffect(() => {
+    if (modeRef.current === "auto")
+      activeLineRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [autoActive]);
 
   // ---- Band mode: line cursor ----
 
@@ -310,27 +546,45 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
     [setLine],
   );
 
-  // Keyboard: space/arrows drive the teleprompter (band mode only), unless a
-  // text field has focus.
+  // Keyboard, unless a text field has focus. Band: space/arrows step lines.
+  // Auto: space toggles the clock, arrows jump the clock a line.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (modeRef.current !== "band") return;
+      const m = modeRef.current;
+      if (m === "playback") return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.key === " " || e.key === "ArrowRight" || e.key === "ArrowDown") {
-        e.preventDefault();
-        stepLine(1);
-      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-        e.preventDefault();
-        stepLine(-1);
-      } else if (e.key === "Home") {
-        e.preventDefault();
-        setLine(-1);
+      if (m === "band") {
+        if (e.key === " " || e.key === "ArrowRight" || e.key === "ArrowDown") {
+          e.preventDefault();
+          stepLine(1);
+        } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+          e.preventDefault();
+          stepLine(-1);
+        } else if (e.key === "Home") {
+          e.preventDefault();
+          setLine(-1);
+        }
+      } else if (m === "auto") {
+        if (e.key === " ") {
+          e.preventDefault();
+          if (clockRef.current.playing) clockPause();
+          else clockPlay();
+        } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+          e.preventDefault();
+          clockStepLine(1);
+        } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+          e.preventDefault();
+          clockStepLine(-1);
+        } else if (e.key === "Home") {
+          e.preventDefault();
+          clockSeek(0);
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stepLine, setLine]);
+  }, [stepLine, setLine, clockPause, clockPlay, clockStepLine, clockSeek]);
 
   // Keep the current band line visible in the controller's line list.
   const activeLineRef = useRef<HTMLLIElement>(null);
@@ -350,10 +604,15 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
 
   const setMode = useCallback(
     (m: SongMode) => {
-      if (m === "band") player.pause();
+      if (m !== "playback") player.pause();
+      if (m !== "auto") {
+        const c = clockRef.current;
+        c.pos = clockPosNow();
+        c.playing = false;
+      }
       sendCommand({ type: "mode", mode: m });
     },
-    [player, sendCommand],
+    [player, sendCommand, clockPosNow],
   );
 
   // ---- Drag-and-drop reorder ----
@@ -437,10 +696,10 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
       </div>
 
       <p className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
-        Search a song, add it to the queue, hit Go. In <strong>band</strong> mode you advance
-        the words by hand (Space / arrow keys) while the band plays. In{" "}
-        <strong>playback</strong> mode this device plays the YouTube audio and the words follow
-        it automatically.
+        Search a song, add it to the queue, hit Go. <strong>⏱ Auto</strong> advances the words
+        on the song&apos;s own timing (tempo slider to match the band, click a line to resync).{" "}
+        <strong>🎤 Band</strong> is fully manual — Space / arrows step lines.{" "}
+        <strong>▶ YouTube</strong> plays the actual recording on this device.
       </p>
 
       <SearchPanel onAdd={(item) => sendCommand({ type: "add", item })} />
@@ -492,22 +751,16 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
                   <span className="controls">
                     <button
                       className="ghost mode-chip"
-                      title={
-                        song.defaultMode === "band"
-                          ? "Band mode (manual advance) — click for playback"
-                          : "Playback mode (YouTube audio) — click for band"
-                      }
+                      title="How this song's lyrics advance — click to change: band = by hand, auto = on the song's own timing, youtube = follows real playback"
                       onClick={() =>
                         sendCommand({
                           type: "updateItem",
                           uid: song.uid,
-                          patch: {
-                            defaultMode: song.defaultMode === "band" ? "playback" : "band",
-                          },
+                          patch: { defaultMode: cycleMode(song) },
                         })
                       }
                     >
-                      {song.defaultMode === "band" ? "🎤 band" : "▶ playback"}
+                      {MODE_CHIP[song.defaultMode]}
                     </button>
                     <YtField
                       item={song}
@@ -560,26 +813,47 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
             <div className="mode-toggle" role="group" aria-label="Lyric mode">
               <button
                 className={mode === "band" ? "primary" : ""}
+                title="Advance the words by hand (Space / arrows)"
                 onClick={() => setMode("band")}
               >
                 🎤 Band
+              </button>
+              <button
+                className={mode === "auto" ? "primary" : ""}
+                disabled={!currentItem.hasSynced}
+                title={
+                  currentItem.hasSynced
+                    ? "Words advance on the song's own timing — no audio needed. Trim the tempo to match the band."
+                    : "No synced lyrics for this song — band mode only"
+                }
+                onClick={() => setMode("auto")}
+              >
+                ⏱ Auto
               </button>
               <button
                 className={mode === "playback" ? "primary" : ""}
                 disabled={!playbackReady}
                 title={
                   playbackReady
-                    ? "Play the recording on this device; words follow automatically"
+                    ? "Play the recording on this device; words follow it"
                     : !currentItem.hasSynced
-                      ? "No synced lyrics for this song — band mode only"
+                      ? "No synced lyrics for this song"
                       : "Paste a YouTube link on the queue row first"
                 }
                 onClick={() => setMode("playback")}
               >
-                ▶ Playback
+                ▶ YouTube
               </button>
             </div>
           </div>
+
+          <ChordsEditor
+            key={currentItem.uid}
+            item={currentItem}
+            onSaved={(hasChords) =>
+              sendCommand({ type: "updateItem", uid: currentItem.uid, patch: { hasChords } })
+            }
+          />
 
           {/* The YouTube player stays mounted (and visible, per its TOS) even
               in band mode, just smaller and paused. */}
@@ -595,7 +869,88 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
             <p style={{ color: "var(--accent)", margin: "0.5rem 0 0" }}>{ytError}</p>
           )}
 
-          {mode === "band" ? (
+          {mode === "auto" ? (
+            <>
+              <div className="cluster" style={{ justifyContent: "center", marginTop: "0.75rem" }}>
+                <button onClick={() => goTo(idx - 1)} disabled={idx === 0}>
+                  ⏮
+                </button>
+                {clockRunning ? (
+                  <button className="primary bigbtn" onClick={clockPause}>
+                    ⏸ Pause
+                  </button>
+                ) : (
+                  <button
+                    className="primary bigbtn"
+                    onClick={clockPlay}
+                    disabled={lines.length === 0}
+                  >
+                    ▶ {autoPos > 0 ? "Resume" : "Start"}
+                  </button>
+                )}
+                <button onClick={() => goTo(idx + 1)} disabled={idx === playlist.length - 1}>
+                  ⏭
+                </button>
+              </div>
+              <div
+                ref={barRef}
+                className="progress"
+                onClick={(e) => {
+                  const el = barRef.current;
+                  if (!el || !autoDuration) return;
+                  const rect = el.getBoundingClientRect();
+                  const f = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                  clockSeek(f * autoDuration);
+                }}
+                style={{ cursor: "pointer" }}
+              >
+                <span style={{ width: `${autoFrac * 100}%` }} />
+              </div>
+              <div className="times">
+                <span>{fmt(autoPos)}</span>
+                <span>{fmt(autoDuration)}</span>
+              </div>
+              <div className="cluster" style={{ marginTop: "0.4rem" }}>
+                <span className="muted" style={{ fontSize: "0.85rem" }}>Tempo</span>
+                <input
+                  type="range"
+                  min={0.7}
+                  max={1.3}
+                  step={0.01}
+                  value={tempo}
+                  onChange={(e) => setTempo(Number(e.target.value))}
+                  style={{ flex: 1 }}
+                />
+                <span style={{ width: "3.5rem", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                  {Math.round(tempo * 100)}%
+                </span>
+                <button className="ghost" onClick={() => setTempo(1)}>
+                  Reset
+                </button>
+              </div>
+              <p className="muted" style={{ margin: "0.4rem 0 0.6rem", fontSize: "0.85rem" }}>
+                Words advance on the song&apos;s own timing. Space = play/pause, ←/→ = jump a
+                line, click a line to resync to the band, tempo slider if they&apos;re playing
+                faster or slower than the record.
+              </p>
+              <ol className="line-list">
+                {lyStatus === "loading" && <li className="muted">Loading lyrics…</li>}
+                {lines.map((line, i) => (
+                  <li
+                    key={i}
+                    ref={i === autoActive ? activeLineRef : undefined}
+                    className={`line-row ${i === autoActive ? "current" : ""} ${
+                      line.sectionStart ? "section-gap" : ""
+                    }`}
+                    onClick={() => line.t !== null && clockSeek(line.t)}
+                  >
+                    <span className="idx">{line.t !== null ? fmt(line.t) : i + 1}</span>
+                    <span>{line.text}</span>
+                  </li>
+                ))}
+              </ol>
+            </>
+          ) : mode === "band" ? (
             <>
               <div className="bigline-btns">
                 <button onClick={() => stepLine(-1)} disabled={lineIndex <= -1}>

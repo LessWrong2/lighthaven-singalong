@@ -86,8 +86,9 @@ export function useSession(sessionId: string | null) {
     const offsetSec = offsetRef.current / 1000;
     if (!s.isPlaying) return Math.max(0, s.positionSec + offsetSec);
     // Convert local wall clock into server time before measuring elapsed.
+    // Elapsed time is scaled by the clock rate (auto mode's tempo trim).
     const serverNow = Date.now() - skewRef.current;
-    const elapsed = (serverNow - s.updatedAt) / 1000;
+    const elapsed = ((serverNow - s.updatedAt) / 1000) * (s.rate ?? 1);
     return Math.max(0, s.positionSec + elapsed + offsetSec);
   }, []);
 

@@ -41,6 +41,7 @@ function freshState(id: string): SessionState {
     isPlaying: false,
     positionSec: 0,
     durationSec: 0,
+    rate: 1,
     lineIndex: -1,
     updatedAt: Date.now(),
   };
@@ -49,7 +50,7 @@ function freshState(id: string): SessionState {
 /** Live position implied by the transport anchor at a given server time. */
 export function livePosition(state: SessionState, now = Date.now()): number {
   if (!state.isPlaying) return state.positionSec;
-  return state.positionSec + (now - state.updatedAt) / 1000;
+  return state.positionSec + ((now - state.updatedAt) / 1000) * (state.rate ?? 1);
 }
 
 function clampIndex(state: SessionState, i: number): number {
@@ -61,6 +62,7 @@ function clampIndex(state: SessionState, i: number): number {
 function onSongChange(state: SessionState): void {
   state.positionSec = 0;
   state.durationSec = 0;
+  state.rate = 1;
   state.isPlaying = false;
   state.lineIndex = -1;
   state.mode = state.playlist[state.currentIndex]?.defaultMode ?? "band";
@@ -71,10 +73,11 @@ function mutate(state: SessionState, cmd: Command): void {
   const now = Date.now();
   switch (cmd.type) {
     case "sync":
-      // Controller's real player is authoritative; just record + re-anchor.
+      // Controller's transport is authoritative; just record + re-anchor.
       state.isPlaying = cmd.isPlaying;
       state.positionSec = Math.max(0, cmd.positionSec);
       if (cmd.durationSec > 0) state.durationSec = cmd.durationSec;
+      state.rate = cmd.rate && cmd.rate > 0 ? cmd.rate : 1;
       state.updatedAt = now;
       break;
     case "next":
@@ -113,6 +116,7 @@ function mutate(state: SessionState, cmd: Command): void {
       const item = state.playlist.find((s) => s.uid === cmd.uid);
       if (!item) break;
       if (cmd.patch.youtubeVideoId !== undefined) item.youtubeVideoId = cmd.patch.youtubeVideoId;
+      if (cmd.patch.hasChords !== undefined) item.hasChords = cmd.patch.hasChords;
       if (cmd.patch.defaultMode !== undefined) {
         item.defaultMode = cmd.patch.defaultMode;
         // Changing the current song's default also flips the live mode, so the
@@ -167,6 +171,10 @@ interface Backend {
   apply(id: string, cmd: Command): Promise<SessionState | undefined>;
   /** Subscribe to state changes; resolves to an unsubscribe function. */
   subscribe(id: string, fn: Subscriber): Promise<() => void | Promise<void>>;
+  /** Chord sheets, keyed by queue-item uid. Side-channel: too big to ride
+   * along in session state, which is rebroadcast on every command. */
+  chordsGet(uid: string): Promise<string | null>;
+  chordsSet(uid: string, text: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +184,7 @@ interface Backend {
 interface MemoryStore {
   sessions: Map<string, SessionState>;
   subscribers: Map<string, Set<Subscriber>>;
+  chords: Map<string, string>;
 }
 
 function makeMemoryBackend(): Backend {
@@ -184,7 +193,8 @@ function makeMemoryBackend(): Backend {
   const g = globalThis as unknown as { __singalongStore?: MemoryStore };
   const store: MemoryStore =
     g.__singalongStore ??
-    (g.__singalongStore = { sessions: new Map(), subscribers: new Map() });
+    (g.__singalongStore = { sessions: new Map(), subscribers: new Map(), chords: new Map() });
+  store.chords ??= new Map(); // hot-reload from an older store shape
 
   const broadcast = (state: SessionState) => {
     const subs = store.subscribers.get(state.id);
@@ -237,6 +247,13 @@ function makeMemoryBackend(): Backend {
         subs!.delete(fn);
         if (subs!.size === 0) store.subscribers.delete(key);
       };
+    },
+    async chordsGet(uid) {
+      return store.chords.get(uid) ?? null;
+    },
+    async chordsSet(uid, text) {
+      if (text) store.chords.set(uid, text);
+      else store.chords.delete(uid);
     },
   };
 }
@@ -352,6 +369,14 @@ function makeRedisBackend(rawUrl: string): Backend {
         sub.disconnect();
       };
     },
+    async chordsGet(uid) {
+      return cmd.get(`lighthaven:chords:${uid}`);
+    },
+    async chordsSet(uid, text) {
+      const key = `lighthaven:chords:${uid}`;
+      if (text) await cmd.set(key, text, "EX", SESSION_TTL_SEC);
+      else await cmd.del(key);
+    },
   };
 }
 
@@ -387,4 +412,12 @@ export function subscribe(
   fn: Subscriber,
 ): Promise<() => void | Promise<void>> {
   return backend.subscribe(id, fn);
+}
+
+export function getChords(uid: string): Promise<string | null> {
+  return backend.chordsGet(uid);
+}
+
+export function setChords(uid: string, text: string): Promise<void> {
+  return backend.chordsSet(uid, text);
 }

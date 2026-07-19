@@ -598,3 +598,46 @@ h1.app {
   color: var(--muted);
   margin-top: -1rem;
 }
+
+/* ---------- Band screen: chord sheet ---------- */
+
+.chords-input {
+  width: 100%;
+  font: 0.85rem/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  padding: 0.6rem;
+  white-space: pre;
+  overflow-x: auto;
+  resize: vertical;
+}
+
+/* Bound the page height so the sheet (not the page) is what scrolls. */
+.display:has(.chords-mode) {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+.lyrics.chords-mode {
+  justify-content: flex-start;
+  align-items: stretch;
+  text-align: left;
+  min-height: 0;
+  overflow: hidden;
+}
+.chord-sheet {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: auto;
+  margin: 0 auto;
+  width: 100%;
+  max-width: 1100px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: calc(var(--lyric-scale, 1) * clamp(0.9rem, 1.8vw, 1.4rem));
+  line-height: 1.4;
+  white-space: pre;
+  /* Chord letters pop; lyric lines stay readable. */
+  color: var(--text);
+}
