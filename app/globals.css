@@ -492,15 +492,8 @@ h1.app {
   font-size: 0.8rem;
   white-space: nowrap;
 }
-.yt-input {
-  width: 10.5rem;
-  font-size: 0.85rem;
-}
-.yt-input.bad {
-  border-bottom-color: var(--accent);
-}
 
-/* ---------- Now playing: mode toggle + YouTube player ---------- */
+/* ---------- Now playing: mode toggle ---------- */
 
 .mode-toggle {
   display: inline-flex;
@@ -511,30 +504,6 @@ h1.app {
 }
 .mode-toggle button + button {
   border-left: none;
-}
-
-/* Player container. Per the YouTube API TOS the player must remain visible —
-   it shrinks in band mode but is never hidden while a video is loaded. */
-.yt-wrap {
-  margin-top: 0.75rem;
-}
-.yt-frame {
-  position: relative;
-  width: min(480px, 100%);
-  aspect-ratio: 16 / 9;
-  border: 1px solid var(--line);
-  background: #000;
-}
-.yt-wrap.yt-mini .yt-frame {
-  width: 220px;
-  margin-left: auto;
-}
-.yt-frame iframe,
-.yt-frame > div {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
 }
 
 /* ---------- Band mode: teleprompter controls (controller) ---------- */

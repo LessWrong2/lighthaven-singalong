@@ -6,7 +6,6 @@ import { useSession } from "@/lib/useSession";
 import { useLyrics } from "@/lib/useLyrics";
 import { activeLyricIndex, fmt } from "@/lib/format";
 import { APP_NAME, CANONICAL_ID } from "@/lib/config";
-import { extractVideoId, useYouTubePlayer } from "@/lib/youtube";
 import type { LyricsSearchResult, QueueItem, SongMode } from "@/lib/types";
 
 /** Format seconds as h:mm:ss (drops the hour part when zero). */
@@ -112,75 +111,6 @@ function SearchPanel({ onAdd }: { onAdd: (item: QueueItem) => void }) {
   );
 }
 
-/** Paste-a-YouTube-link field for one queue row. */
-function YtField({
-  item,
-  onSet,
-}: {
-  item: QueueItem;
-  onSet: (videoId: string | undefined) => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const [bad, setBad] = useState(false);
-
-  if (item.youtubeVideoId) {
-    return (
-      <span className="cluster" style={{ gap: "0.3rem" }}>
-        <span className="badge badge-synced" title={`Video: ${item.youtubeVideoId}`}>
-          ✓ video
-        </span>
-        <button className="ghost" title="Remove video" onClick={() => onSet(undefined)}>
-          ✕
-        </button>
-      </span>
-    );
-  }
-
-  function commit() {
-    const id = extractVideoId(draft);
-    if (id) {
-      setDraft("");
-      setBad(false);
-      onSet(id);
-    } else {
-      setBad(draft.trim().length > 0);
-    }
-  }
-
-  return (
-    <span className="cluster" style={{ gap: "0.3rem", flexWrap: "nowrap" }}>
-      <input
-        type="text"
-        className={`yt-input ${bad ? "bad" : ""}`}
-        placeholder="Paste YouTube link"
-        value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          setBad(false);
-        }}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            commit();
-          }
-        }}
-      />
-      <a
-        className="pill"
-        href={`https://www.youtube.com/results?search_query=${encodeURIComponent(
-          `${item.title} ${item.artist}`,
-        )}`}
-        target="_blank"
-        rel="noreferrer"
-        title="Search YouTube for this song in a new tab, then paste the link here"
-      >
-        YT ↗
-      </a>
-    </span>
-  );
-}
-
 /** Paste-in chord sheet editor for the current song. The sheet is stored
  * server-side (chord store) and shown on displays that turn on "Band screen"
  * in their ⚙ settings, auto-scrolled in time with the song. */
@@ -271,24 +201,16 @@ function ChordsEditor({
   );
 }
 
-/** Next mode when clicking a queue row's chip: band → auto → youtube → band,
- * skipping modes the song can't do. */
+/** Next mode when clicking a queue row's chip: band ↔ auto (auto only when
+ * the song has synced lyrics to drive it). */
 function cycleMode(song: QueueItem): SongMode {
-  const order: SongMode[] = ["band", "auto", "playback"];
-  const i = order.indexOf(song.defaultMode);
-  for (let k = 1; k <= order.length; k++) {
-    const cand = order[(i + k) % order.length];
-    if (cand === "band") return cand;
-    if (cand === "auto" && song.hasSynced) return cand;
-    if (cand === "playback" && song.hasSynced && song.youtubeVideoId) return cand;
-  }
+  if (song.defaultMode === "band" && song.hasSynced) return "auto";
   return "band";
 }
 
 const MODE_CHIP: Record<SongMode, string> = {
   band: "🎤 band",
   auto: "⏱ auto",
-  playback: "▶ youtube",
 };
 
 function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
@@ -299,13 +221,10 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
   const { state, status, sendCommand } = useSession(sessionId);
 
   const [notFound, setNotFound] = useState(false);
-  const [ytError, setYtError] = useState<string | null>(null);
   // Drag-and-drop reorder state.
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  // Whether playback should continue across song changes (auto-advance).
-  const wantPlayRef = useRef(false);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -334,65 +253,10 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
   const idxRef = useRef(idx);
   idxRef.current = idx;
 
-  // ---- Playback mode: YouTube player feeds `sync` commands ----
-
-  // Throttle: send immediately on play/pause or a seek-sized jump, else at
-  // most every 3s (the original app's heartbeat cadence).
-  const lastSentRef = useRef<{ atMs: number; positionSec: number; isPlaying: boolean } | null>(
-    null,
-  );
-  const onTransport = useCallback(
-    (t: { isPlaying: boolean; positionSec: number; durationSec: number }) => {
-      if (modeRef.current !== "playback") return;
-      const now = Date.now();
-      const last = lastSentRef.current;
-      let send = false;
-      if (!last || last.isPlaying !== t.isPlaying) send = true;
-      else if (now - last.atMs >= 3000) send = true;
-      else {
-        const expected = last.isPlaying
-          ? last.positionSec + (now - last.atMs) / 1000
-          : last.positionSec;
-        if (Math.abs(t.positionSec - expected) > 0.75) send = true; // seek/stall
-      }
-      if (!send) return;
-      lastSentRef.current = { atMs: now, positionSec: t.positionSec, isPlaying: t.isPlaying };
-      sendCommand({
-        type: "sync",
-        isPlaying: t.isPlaying,
-        positionSec: t.positionSec,
-        durationSec: t.durationSec,
-      });
-    },
-    [sendCommand],
-  );
-
-  const onEnded = useCallback(() => {
-    const pl = playlistRef.current;
-    const i = idxRef.current;
-    if (i < pl.length - 1) {
-      wantPlayRef.current = true;
-      sendCommand({ type: "select", index: i + 1 });
-    } else {
-      wantPlayRef.current = false;
-    }
-  }, [sendCommand]);
-
-  const player = useYouTubePlayer({
-    videoId: currentItem?.youtubeVideoId ?? null,
-    containerId: "yt-player",
-    onTransport,
-    onEnded,
-    onError: (msg) => setYtError(msg),
-    getAutoplay: () => wantPlayRef.current && modeRef.current === "playback",
-  });
-
-  // Clear stale player errors, the sync-throttle anchor, the optimistic line
-  // cursor, and the auto-mode clock when the song changes.
+  // Reset the optimistic line cursor and the auto-mode clock when the song
+  // changes.
   const currentUid = currentItem?.uid;
   useEffect(() => {
-    setYtError(null);
-    lastSentRef.current = null;
     sentLineRef.current = null;
     clockRef.current = { playing: false, pos: 0, atMs: 0, rate: 1 };
     setTempoState(1);
@@ -551,7 +415,6 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const m = modeRef.current;
-      if (m === "playback") return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (m === "band") {
@@ -595,8 +458,7 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
   }, [lineIndex]);
 
   const goTo = useCallback(
-    (target: number, andPlay = false) => {
-      wantPlayRef.current = andPlay;
+    (target: number) => {
       sendCommand({ type: "select", index: target });
     },
     [sendCommand],
@@ -604,7 +466,6 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
 
   const setMode = useCallback(
     (m: SongMode) => {
-      if (m !== "playback") player.pause();
       if (m !== "auto") {
         const c = clockRef.current;
         c.pos = clockPosNow();
@@ -612,7 +473,7 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
       }
       sendCommand({ type: "mode", mode: m });
     },
-    [player, sendCommand, clockPosNow],
+    [sendCommand, clockPosNow],
   );
 
   // ---- Drag-and-drop reorder ----
@@ -655,19 +516,6 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
   const displayHref = isCanonical ? "/" : `/display?s=${state.id}`;
   const knownTotal = playlist.reduce((acc, s) => acc + (s.durationSec ?? 0), 0);
 
-  const playbackReady = Boolean(currentItem?.hasSynced && currentItem?.youtubeVideoId);
-  const dur = state.durationSec;
-  const pos = state.positionSec; // anchor; good enough for the host's readout
-  const frac = dur > 0 ? Math.min(1, pos / dur) : 0;
-
-  function seekFromEvent(e: React.MouseEvent) {
-    const el = barRef.current;
-    if (!el || !dur) return;
-    const rect = el.getBoundingClientRect();
-    const f = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    player.seekTo(f * dur);
-  }
-
   return (
     <div className="wrap">
       <div className="cluster" style={{ justifyContent: "space-between" }}>
@@ -698,8 +546,7 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
       <p className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
         Search a song, add it to the queue, hit Go. <strong>⏱ Auto</strong> advances the words
         on the song&apos;s own timing (tempo slider to match the band, click a line to resync).{" "}
-        <strong>🎤 Band</strong> is fully manual — Space / arrows step lines.{" "}
-        <strong>▶ YouTube</strong> plays the actual recording on this device.
+        <strong>🎤 Band</strong> is fully manual — Space / arrows step lines.
       </p>
 
       <SearchPanel onAdd={(item) => sendCommand({ type: "add", item })} />
@@ -751,7 +598,7 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
                   <span className="controls">
                     <button
                       className="ghost mode-chip"
-                      title="How this song's lyrics advance — click to change: band = by hand, auto = on the song's own timing, youtube = follows real playback"
+                      title="How this song's lyrics advance — click to change: band = by hand, auto = on the song's own timing"
                       onClick={() =>
                         sendCommand({
                           type: "updateItem",
@@ -762,12 +609,6 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
                     >
                       {MODE_CHIP[song.defaultMode]}
                     </button>
-                    <YtField
-                      item={song}
-                      onSet={(videoId) =>
-                        sendCommand({ type: "updateItem", uid: song.uid, patch: { youtubeVideoId: videoId } })
-                      }
-                    />
                     <button title="Remove" onClick={() => sendCommand({ type: "remove", uid: song.uid })}>
                       ✕
                     </button>
@@ -830,20 +671,6 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
               >
                 ⏱ Auto
               </button>
-              <button
-                className={mode === "playback" ? "primary" : ""}
-                disabled={!playbackReady}
-                title={
-                  playbackReady
-                    ? "Play the recording on this device; words follow it"
-                    : !currentItem.hasSynced
-                      ? "No synced lyrics for this song"
-                      : "Paste a YouTube link on the queue row first"
-                }
-                onClick={() => setMode("playback")}
-              >
-                ▶ YouTube
-              </button>
             </div>
           </div>
 
@@ -854,20 +681,6 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
               sendCommand({ type: "updateItem", uid: currentItem.uid, patch: { hasChords } })
             }
           />
-
-          {/* The YouTube player stays mounted (and visible, per its TOS) even
-              in band mode, just smaller and paused. */}
-          <div
-            className={`yt-wrap ${mode === "playback" && currentItem.youtubeVideoId ? "" : "yt-mini"}`}
-            style={{ display: currentItem.youtubeVideoId ? undefined : "none" }}
-          >
-            <div className="yt-frame">
-              <div id="yt-player" />
-            </div>
-          </div>
-          {ytError && mode === "playback" && (
-            <p style={{ color: "var(--accent)", margin: "0.5rem 0 0" }}>{ytError}</p>
-          )}
 
           {mode === "auto" ? (
             <>
@@ -950,7 +763,7 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
                 ))}
               </ol>
             </>
-          ) : mode === "band" ? (
+          ) : (
             <>
               <div className="bigline-btns">
                 <button onClick={() => stepLine(-1)} disabled={lineIndex <= -1}>
@@ -999,45 +812,6 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
                   </li>
                 ))}
               </ol>
-            </>
-          ) : (
-            <>
-              <div className="cluster" style={{ justifyContent: "center", marginTop: "0.75rem" }}>
-                <button onClick={() => goTo(idx - 1)} disabled={idx === 0}>
-                  ⏮
-                </button>
-                {state.isPlaying ? (
-                  <button className="primary bigbtn" onClick={() => player.pause()}>
-                    ⏸ Pause
-                  </button>
-                ) : (
-                  <button
-                    className="primary bigbtn"
-                    onClick={() => {
-                      wantPlayRef.current = true;
-                      player.play();
-                    }}
-                    disabled={!player.ready}
-                  >
-                    ▶ Play
-                  </button>
-                )}
-                <button onClick={() => goTo(idx + 1, true)} disabled={idx === playlist.length - 1}>
-                  ⏭
-                </button>
-              </div>
-              <div
-                ref={barRef}
-                className="progress"
-                onClick={seekFromEvent}
-                style={{ cursor: "pointer" }}
-              >
-                <span style={{ width: `${frac * 100}%` }} />
-              </div>
-              <div className="times">
-                <span>{fmt(pos)}</span>
-                <span>{fmt(dur)}</span>
-              </div>
             </>
           )}
         </div>

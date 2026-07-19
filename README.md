@@ -16,19 +16,15 @@ Adapted from
   Each screen has its own font / size / spacing settings (persisted per
   device).
 - **`/dashboard`** — the host desk. Search a song, add it to the queue, hit
-  **Go**, then drive it in one of three modes:
+  **Go**, then drive it in one of two modes:
   - **⏱ Auto mode** (default for songs with synced lyrics) — a virtual clock
-    advances the words on the song's own LRC timestamps; no audio or YouTube
-    link needed. **Space** starts/pauses, **←/→** jump a line, click a line to
-    resync to wherever the band actually is, and the **tempo slider**
-    (70–130%) matches the clock to a band playing faster or slower than the
-    record.
+    advances the words on the song's own LRC timestamps; no audio needed.
+    **Space** starts/pauses, **←/→** jump a line, click a line to resync to
+    wherever the band actually is, and the **tempo slider** (70–130%) matches
+    the clock to a band playing faster or slower than the record.
   - **🎤 Band mode** — fully manual teleprompter: **Space / →** next line,
     **←** back, click any line to jump, Home for the title card. Works with
     synced *and* plain (untimed) lyrics.
-  - **▶ YouTube mode** — this device plays the actual recording via an
-    embedded YouTube player (keep it connected to the PA) and the words follow
-    the playback clock. Needs a YouTube link pasted on the queue row.
 
   **🎸 Chords**: paste a chord sheet for the current song (the "Find chords ↗"
   link opens a search; there's no free chords API, so it's copy-paste). Any
@@ -45,11 +41,11 @@ The server relays a tiny session state (queue metadata + transport + line
 cursor — never the lyrics themselves) to every device over **SSE**
 (`/api/session/[id]/events`).
 
-- **Playback mode:** the host's YouTube player is the source of truth. Its
-  state changes and a throttled position poll push `sync` anchors
-  (isPlaying, position, duration); every event carries `serverNow` so clients
-  correct clock skew and extrapolate the live position each animation frame.
-  Each screen has a ±2s offset slider to trim residual lag.
+- **Auto mode:** the host's virtual clock is the source of truth. Play,
+  pause, seek, and tempo changes push `sync` anchors (isPlaying, position,
+  duration, rate); every event carries `serverNow` so clients correct clock
+  skew and extrapolate the live position each animation frame — elapsed time
+  scaled by the tempo rate. Each screen has a ±2s offset slider.
 - **Band mode:** there is no clock — the host's `line` commands carry an
   absolute line index and screens jump to it (~100 ms).
 
@@ -79,15 +75,14 @@ side. Without `REDIS_URL`, state lives in-process (fine for one machine / dev).
 
 ## Event runbook
 
-1. Host opens `/dashboard`, plugs this machine into the PA (only matters for
-   playback mode), and clicks the page once (browser autoplay unlock).
+1. Host opens `/dashboard`.
 2. Each lyric screen opens the site root, ⚙ → Fullscreen, adjusts font size.
+   The one facing the band can also turn on ⚙ → 🎸 Band screen (chords).
 3. Someone requests a song → search it → check the badge (**synced** /
    **plain** / **no lyrics**) → Add → drag to order → **Go**.
-4. Band plays: hit **▶ Start lyrics**, then Space through the lines as they're
-   sung. For a break, ⟲ Title card puts the next song's name up.
-5. If the video for playback mode won't embed (some labels block it), the
-   dashboard says so — paste a different upload.
+4. Band plays: in auto mode hit **▶ Start** when they start and trim the
+   tempo/click a line if they drift; in band mode Space through the lines as
+   they're sung. For a break, ⟲ Title card puts the next song's name up.
 
 ## Notes
 

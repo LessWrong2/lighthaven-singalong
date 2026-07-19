@@ -3,7 +3,6 @@
 /** How lyrics advance for a song. */
 export type SongMode =
   | "auto" // virtual clock advances lyrics on the LRC timestamps (no audio)
-  | "playback" // host plays the recording (YouTube); lyrics follow its clock
   | "band"; // live band; host advances lines manually (teleprompter)
 
 /** A song in the queue. Lyrics themselves are NOT stored here — clients fetch
@@ -20,8 +19,6 @@ export interface QueueItem {
   lrclibId: number | null;
   /** Whether the LRCLIB record has synced (timestamped) lyrics. */
   hasSynced: boolean;
-  /** YouTube video id for playback mode, if the host attached one. */
-  youtubeVideoId?: string;
   /** Whether a chord sheet has been pasted for this song (the sheet itself
    * lives in the chord store, fetched from /api/chords/[uid]). */
   hasChords?: boolean;
@@ -32,8 +29,8 @@ export interface QueueItem {
 /**
  * Server-relayed state for a session.
  *
- * In playback mode the controller owns the real player and is the source of
- * truth; it pushes position/playing/duration here via `sync`. Position is an
+ * In auto mode the controller's virtual clock is the source of truth; it
+ * pushes position/playing/duration/rate here via `sync`. Position is an
  * anchor (positionSec captured at updatedAt, in server-clock ms) so displays
  * can extrapolate between pushes, correcting for client/server clock skew via
  * the `serverNow` field on each event.
@@ -49,9 +46,9 @@ export interface SessionState {
   currentIndex: number;
   /** Effective lyric mode for the current song (host can flip it live). */
   mode: SongMode;
-  /** Whether the controller's player is playing (playback mode). */
+  /** Whether the auto-mode clock is running. */
   isPlaying: boolean;
-  /** Playback position (seconds) at the moment captured by updatedAt. */
+  /** Clock position (seconds) at the moment captured by updatedAt. */
   positionSec: number;
   /** Duration of the current song (seconds), reported by the controller. */
   durationSec: number;
@@ -72,8 +69,7 @@ export interface StateEnvelope {
 
 /** Commands the controller can POST to mutate session state. */
 export type Command =
-  // Controller reports its transport (playback / auto modes). rate defaults
-  // to 1 (YouTube playback); auto mode sends its tempo trim.
+  // Controller reports its auto-mode clock; rate is the tempo trim.
   | { type: "sync"; isPlaying: boolean; positionSec: number; durationSec: number; rate?: number }
   // Song selection (resets transport + line cursor, adopts the song's mode).
   | { type: "select"; index: number }
@@ -85,7 +81,7 @@ export type Command =
   | {
       type: "updateItem";
       uid: string;
-      patch: Partial<Pick<QueueItem, "youtubeVideoId" | "defaultMode" | "hasChords">>;
+      patch: Partial<Pick<QueueItem, "defaultMode" | "hasChords">>;
     }
   | { type: "reorder"; from: number; to: number }
   | { type: "reset" }
@@ -108,7 +104,7 @@ export interface LyricLine {
 
 /** Parsed lyrics for a song. */
 export interface LyricDoc {
-  /** True when lines carry timestamps (playback auto-sync possible). */
+  /** True when lines carry timestamps (auto mode possible). */
   synced: boolean;
   lines: LyricLine[];
 }

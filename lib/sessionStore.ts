@@ -65,7 +65,9 @@ function onSongChange(state: SessionState): void {
   state.rate = 1;
   state.isPlaying = false;
   state.lineIndex = -1;
-  state.mode = state.playlist[state.currentIndex]?.defaultMode ?? "band";
+  // Coerce unknown values (e.g. items from a retired mode) to band.
+  const dm = state.playlist[state.currentIndex]?.defaultMode;
+  state.mode = dm === "auto" ? "auto" : "band";
 }
 
 /** Apply a command's effect to a state object in place. Pure logic, no I/O. */
@@ -115,7 +117,6 @@ function mutate(state: SessionState, cmd: Command): void {
     case "updateItem": {
       const item = state.playlist.find((s) => s.uid === cmd.uid);
       if (!item) break;
-      if (cmd.patch.youtubeVideoId !== undefined) item.youtubeVideoId = cmd.patch.youtubeVideoId;
       if (cmd.patch.hasChords !== undefined) item.hasChords = cmd.patch.hasChords;
       if (cmd.patch.defaultMode !== undefined) {
         item.defaultMode = cmd.patch.defaultMode;
@@ -150,7 +151,7 @@ function mutate(state: SessionState, cmd: Command): void {
       state.updatedAt = now;
       break;
     case "mode":
-      state.mode = cmd.mode;
+      state.mode = cmd.mode === "auto" ? "auto" : "band";
       // Entering band mode freezes the clock; leaving it starts paused.
       state.isPlaying = false;
       state.updatedAt = now;
