@@ -15,6 +15,10 @@ Adapted from
 - **`/`** — the lyrics screen. Open it on every display, hit ⚙ → Fullscreen.
   Each screen has its own font / size / spacing settings (persisted per
   device).
+- **`/chords`** — same screen, but when the current song has a chord sheet
+  pasted it shows that instead (monospace, auto-scrolled in time with the
+  song). No chords → plain lyrics, identical to `/`. Point this one at the
+  band.
 - **`/dashboard`** — the host desk. Search a song, hit **Play** (it goes on
   stage immediately — one song at a time is the normal flow; a collapsible
   queue panel is there via "▸ Queue" when you want to line songs up), then
@@ -29,10 +33,9 @@ Adapted from
     synced *and* plain (untimed) lyrics.
 
   **🎸 Chords**: paste a chord sheet for the current song (the "Find chords ↗"
-  link opens a search; there's no free chords API, so it's copy-paste). Any
-  display can flip on **⚙ → 🎸 Band screen (chords)** to show that sheet in
-  monospace — aligned chords over lyrics — auto-scrolling in time with the
-  song. Point that screen at the band; the rest keep showing lyrics.
+  link opens a search; there's no free chords API, so it's copy-paste). The
+  `/chords` screen shows it in monospace — aligned chords over lyrics —
+  auto-scrolling in time with the song.
 
 `/controller?s=CODE` and `/display?s=CODE` still exist for ad-hoc side
 sessions; normal use is the single canonical session (`HAVEN`).
@@ -79,7 +82,7 @@ side. Without `REDIS_URL`, state lives in-process (fine for one machine / dev).
 
 1. Host opens `/dashboard`.
 2. Each lyric screen opens the site root, ⚙ → Fullscreen, adjusts font size.
-   The one facing the band can also turn on ⚙ → 🎸 Band screen (chords).
+   The one facing the band opens `/chords` instead.
 3. Someone requests a song → search it → check the badge (**synced** /
    **plain** / **no lyrics**) → Add → drag to order → **Go**.
 4. Band plays: in auto mode hit **▶ Start** when they start and trim the

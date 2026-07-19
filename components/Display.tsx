@@ -41,9 +41,13 @@ function fontStackFor(key: string): string {
 function DisplayInner({
   sessionId: propSessionId,
   concert,
+  chords: wantChords,
 }: {
   sessionId?: string;
   concert?: boolean;
+  /** Prefer the song's chord sheet over lyrics when one exists (the /chords
+   * screen, pointed at the band). */
+  chords?: boolean;
 }) {
   const params = useSearchParams();
   // Prop wins, then an explicit ?s= code, else the canonical session.
@@ -56,10 +60,6 @@ function DisplayInner({
   const [showControls, setShowControls] = useState(false);
   const activeRef = useRef<HTMLParagraphElement>(null);
   const chordsPreRef = useRef<HTMLPreElement>(null);
-
-  // "Band screen": show the song's pasted chord sheet instead of lyrics,
-  // auto-scrolled in time. Per-device, persisted.
-  const [chordsView, setChordsViewState] = useState(false);
   const [chordSheet, setChordSheet] = useState<{ uid: string; text: string | null } | null>(
     null,
   );
@@ -76,12 +76,7 @@ function DisplayInner({
     if (Number.isFinite(fs) && fs > 0) setFontScale(fs);
     if (ls !== null && Number.isFinite(Number(ls))) setLineSpace(Number(ls));
     if (fk && FONTS.some((f) => f.key === fk)) setFontKey(fk);
-    setChordsViewState(window.localStorage.getItem("lighthaven:chordsView") === "1");
   }, []);
-  const setChordsView = (v: boolean) => {
-    setChordsViewState(v);
-    window.localStorage.setItem("lighthaven:chordsView", v ? "1" : "0");
-  };
   const updateFontScale = (v: number) => {
     setFontScale(v);
     window.localStorage.setItem("lighthaven:fontScale", String(v));
@@ -156,12 +151,12 @@ function DisplayInner({
     };
   }, [livePositionNow]);
 
-  // Fetch the chord sheet when this screen is a band screen and the current
+  // Fetch the chord sheet when this is the /chords screen and the current
   // song has one pasted.
   const currentUid = current?.uid;
   const currentHasChords = Boolean(current?.hasChords);
   useEffect(() => {
-    if (!chordsView || !currentUid || !currentHasChords) return;
+    if (!wantChords || !currentUid || !currentHasChords) return;
     if (chordSheet?.uid === currentUid && chordSheet.text !== null) return;
     let cancelled = false;
     fetch(`/api/chords/${currentUid}`)
@@ -173,7 +168,15 @@ function DisplayInner({
     return () => {
       cancelled = true;
     };
-  }, [chordsView, currentUid, currentHasChords, chordSheet]);
+  }, [wantChords, currentUid, currentHasChords, chordSheet]);
+
+  // What this screen shows for the current song: the chord sheet when we're
+  // the /chords screen and one exists (fall back to lyrics when it doesn't,
+  // or when the sheet fails to load).
+  const sheetText =
+    chordSheet && currentUid && chordSheet.uid === currentUid ? chordSheet.text : null;
+  const chordsActive =
+    Boolean(wantChords) && currentHasChords && (sheetText === null || sheetText.length > 0);
 
   // Band mode when the host says so, or forced when there are no timestamps
   // to follow (plain lyrics can only be driven by hand).
@@ -232,16 +235,6 @@ function DisplayInner({
             </button>
           </div>
 
-          <div className="cluster" style={{ marginTop: "0.6rem" }}>
-            <button
-              className={chordsView ? "primary" : "ghost"}
-              aria-pressed={chordsView}
-              title="Show the song's chord sheet instead of lyrics — for the screen facing the band"
-              onClick={() => setChordsView(!chordsView)}
-            >
-              🎸 Band screen (chords)
-            </button>
-          </div>
 
           {!bandMode && (
             <>
@@ -347,7 +340,7 @@ function DisplayInner({
 
       {concert && <div className="concert-mark">{APP_NAME}</div>}
 
-      {chordsView ? (
+      {chordsActive ? (
         <>
           <div className="display-head">
             <h1 className="display-title">
@@ -360,23 +353,15 @@ function DisplayInner({
               </span>
               <span className="pill">
                 <span className={`dot ${status.connected ? "live" : ""}`} />
-                {status.connected ? "🎸 Band screen" : "…"}
+                {status.connected ? "🎸 Chords" : "…"}
               </span>
             </div>
           </div>
           <div className="lyrics chords-mode" style={{ "--lyric-scale": fontScale } as CSSProperties}>
-            {!current.hasChords ? (
-              <p className="lyric-line active muted">
-                No chords pasted for this song — add them on the dashboard (🎸 Chords).
-              </p>
-            ) : chordSheet?.uid === current.uid && chordSheet.text !== null ? (
-              chordSheet.text ? (
-                <pre ref={chordsPreRef} className="chord-sheet">
-                  {chordSheet.text}
-                </pre>
-              ) : (
-                <p className="lyric-line active muted">Couldn&apos;t load the chord sheet.</p>
-              )
+            {sheetText ? (
+              <pre ref={chordsPreRef} className="chord-sheet">
+                {sheetText}
+              </pre>
             ) : (
               <p className="lyric-line active muted">Loading chords…</p>
             )}
@@ -457,7 +442,11 @@ function DisplayInner({
   );
 }
 
-export default function Display(props: { sessionId?: string; concert?: boolean }) {
+export default function Display(props: {
+  sessionId?: string;
+  concert?: boolean;
+  chords?: boolean;
+}) {
   return (
     <Suspense fallback={<div className="wrap muted">Loading…</div>}>
       <DisplayInner {...props} />

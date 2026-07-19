@@ -205,8 +205,8 @@ function ChordsEditor({
               Close
             </button>
             <span className="muted" style={{ fontSize: "0.8rem" }}>
-              Shows on screens with &ldquo;🎸 Band screen&rdquo; turned on (⚙ on the display),
-              scrolling in time with the song.
+              Shows on the <code>/chords</code> screen (point one at the band), scrolling in
+              time with the song.
             </span>
           </div>
         </div>
@@ -550,8 +550,13 @@ function ControllerInner({ sessionId: propSessionId }: { sessionId?: string }) {
             {status.connected ? "Live" : "Reconnecting…"}
           </span>
           <a className="pill" href={displayHref} target="_blank" rel="noreferrer">
-            Open lyrics screen ↗
+            Lyrics screen ↗
           </a>
+          {isCanonical && (
+            <a className="pill" href="/chords" target="_blank" rel="noreferrer">
+              Chords screen ↗
+            </a>
+          )}
         </div>
       </div>
 
