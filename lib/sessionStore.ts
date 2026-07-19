@@ -250,13 +250,16 @@ const SESSION_TTL_SEC = 60 * 60 * 24;
 const stateKey = (id: string) => `lighthaven:session:${id.toUpperCase()}`;
 const channel = (id: string) => `lighthaven:chan:${id.toUpperCase()}`;
 
-/** ioredis parses scheme-less URLs as unix socket paths, so a REDIS_URL pasted
- * as `user:pass@host:port` fails with ENOENT — normalize it. Pasted values may
- * also carry stray newlines/spaces (dashboard line-wrap); URLs can't legally
- * contain whitespace, so strip it all before checking for a scheme. */
+/** Rebuild a well-formed connection URL from however REDIS_URL was pasted.
+ * Real-world values arrive scheme-less (`user:pass@host:port`), protocol-
+ * relative (`//user:pass@host:port`), or with stray whitespace/newlines from
+ * dashboard line-wrap; ioredis silently treats malformed ones as unix socket
+ * paths and dies with ENOENT. */
 function normalizeRedisUrl(url: string): string {
   const clean = url.replace(/\s+/g, "");
-  return clean.includes("://") ? clean : `redis://${clean}`;
+  const m = clean.match(/^(rediss?):\/+(.*)$/i);
+  if (m) return `${m[1].toLowerCase()}://${m[2]}`;
+  return `redis://${clean.replace(/^\/+/, "")}`;
 }
 
 /** An unhandled ioredis "error" event crashes the serverless function; log it
